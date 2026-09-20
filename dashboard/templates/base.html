@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>{% block title %}SAGIP Command{% endblock %}</title>
+
+    <!--
+        Leaflet is served from the local static folder so the dashboard opens
+        without internet access. A CDN reference here would contradict the
+        fallback scenario this system is meant to demonstrate.
+    -->
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/leaflet.css') }}"
+    >
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/style.css') }}"
+    >
+</head>
+
+<body>
+    <header class="topbar">
+        <div class="brand">
+            <div class="logo">S</div>
+
+            <div>
+                <h1>SAGIP Command</h1>
+                <p>Pilot test area | Post-earthquake response</p>
+            </div>
+        </div>
+
+        <nav class="main-nav" aria-label="Sections">
+            <a
+                href="{{ url_for('dashboard_page') }}"
+                class="nav-link {{ 'active' if active_page == 'dashboard' }}"
+            >
+                Operations
+            </a>
+
+            <a
+                href="{{ url_for('records_page') }}"
+                class="nav-link {{ 'active' if active_page == 'records' }}"
+            >
+                Records
+            </a>
+
+            <a
+                href="{{ url_for('network_page') }}"
+                class="nav-link {{ 'active' if active_page == 'network' }}"
+            >
+                Network
+            </a>
+        </nav>
+
+        <button
+            type="button"
+            id="health-toggle"
+            class="mode-chip"
+            aria-expanded="false"
+            aria-controls="health-drawer"
+        >
+            <span id="mode-dot" class="mode-dot"></span>
+            <span id="mode-label">Checking</span>
+        </button>
+    </header>
+
+    <!--
+        System health drawer. Kept out of the way until asked for, because an
+        operator watching the queue does not need six link states on screen at
+        all times, but needs them immediately when something stops arriving.
+    -->
+    <section
+        id="health-drawer"
+        class="health-drawer"
+        aria-label="System health"
+        hidden
+    >
+        <div class="health-grid" id="health-grid"></div>
+
+        <p class="health-footer">
+            <span id="health-checked">Waiting for status</span>
+        </p>
+    </section>
+
+    <main class="page">
+        {% block content %}{% endblock %}
+    </main>
+
+    <div
+        id="notification"
+        class="notification"
+        role="status"
+        aria-live="polite"
+    ></div>
+
+    <script
+        src="{{ url_for('static', filename='js/leaflet.js') }}"
+    ></script>
+
+    <script
+        src="{{ url_for('static', filename='js/common.js') }}"
+    ></script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

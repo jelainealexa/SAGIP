@@ -1,0 +1,36 @@
+# Python virtual environment. Never commit this.
+# It is large, it is specific to one operating system, and every member
+# creates their own from requirements.txt.
+venv/
+.venv/
+env/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Flask / local runtime
+instance/
+*.log
+*.sqlite
+*.db
+
+# Editor and OS clutter
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Downloaded library sources that are already copied into static/.
+# Leaflet lives in dashboard/static/css/ and dashboard/static/js/; the
+# unpacked release folder is not needed in the repository.
+leaflet/
+
+# Keep the offline tile pack. It is small (a few hundred KB for the pilot
+# area) and committing it means the offline demo works on any member's
+# machine without a re-download. If it ever grows past a few MB, ignore it
+# here and share it another way.
+# dashboard/static/tiles/

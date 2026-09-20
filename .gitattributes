@@ -1,0 +1,17 @@
+# Normalise line endings so Windows and other machines do not show every line
+# of a file as changed when nobody edited it.
+* text=auto
+
+*.py text
+*.js text
+*.css text
+*.html text
+*.md text
+*.txt text
+*.json text
+
+# Binary files must not be touched.
+*.png binary
+*.jpg binary
+*.ico binary
+*.pdf binary

@@ -1,0 +1,1123 @@
+/* ---------------------------------------------------------------------------
+   SAGIP Command Dashboard
+
+   Dark surface, because this screen is watched for long stretches in a room
+   where a bright panel is tiring, and because a dark ground lets the three
+   status colours carry the signal instead of competing with white.
+
+   Colour discipline is unchanged from the light version:
+
+   Red means one thing only, an open critical emergency. It is never used for
+   ordinary buttons, headings, branding or panel borders. Dispatching a UAV is
+   a deliberate operator action, not an emergency, so its button is blue.
+
+   Amber marks a state needing attention but not critical: a report needing
+   assistance, an unlocated report, a degraded relay, tiles falling back to the
+   internet.
+
+   Safe reports are deliberately quiet. A report marked safe is the absence of
+   a problem, and giving it the weight of a critical one makes the queue harder
+   to read.
+--------------------------------------------------------------------------- */
+
+:root {
+    --bg: #0b1116;
+    --surface: #121c22;
+    --surface-raised: #17232a;
+    --surface-soft: #0f181d;
+
+    --border: #22323b;
+    --border-strong: #31454f;
+
+    --text: #dfe8ed;
+    --text-dim: #9db0ba;
+    --text-faint: #7a919d;
+
+    /* Emergency only. */
+    --critical: #ff6257;
+    --critical-bright: #e8392b;
+    --critical-soft: rgba(232, 57, 43, 0.14);
+
+    /* Needs attention. */
+    --attention: #f2a63d;
+    --attention-soft: rgba(242, 166, 61, 0.13);
+
+    /* Settled, nominal, resolved. */
+    --settled: #48c58e;
+    --settled-soft: rgba(72, 197, 142, 0.13);
+
+    /* Actions and UAV. */
+    --action: #4f8cf7;
+    --action-bright: #6ba0ff;
+    --action-soft: rgba(79, 140, 247, 0.15);
+
+    --mono: "JetBrains Mono", "Consolas", "Menlo", monospace;
+    --shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+}
+
+* { box-sizing: border-box; }
+
+/* Tells the browser to draw native controls, scrollbars and the select
+   dropdown in their dark variants instead of light-on-light. */
+:root { color-scheme: dark; }
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+        radial-gradient(1200px 600px at 20% -10%, #14222b 0%, transparent 60%),
+        var(--bg);
+    color: var(--text);
+    font-family: "Inter", "Segoe UI", Arial, sans-serif;
+    font-size: 13px;
+}
+
+button { font: inherit; }
+h1, h2, h3, p { margin: 0; }
+h1 { font-size: 15px; letter-spacing: 0.02em; }
+h2 { font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; }
+h3 { font-size: 15px; }
+
+.hidden { display: none !important; }
+.mono { font-family: var(--mono); font-size: 11px; }
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: var(--surface-soft); }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: #456070; }
+
+/* --------------------------------------------------------------------------
+   Top bar
+-------------------------------------------------------------------------- */
+
+.topbar {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 10px 18px;
+    background: linear-gradient(180deg, #16232b 0%, #111b21 100%);
+    border-bottom: 1px solid var(--border);
+}
+
+.brand { display: flex; align-items: center; gap: 11px; flex: 0 0 auto; }
+
+.logo {
+    display: grid;
+    width: 36px;
+    height: 36px;
+    place-items: center;
+    border: 1px solid var(--border-strong);
+    border-radius: 9px;
+    background: var(--surface-raised);
+    color: var(--action-bright);
+    font-family: var(--mono);
+    font-size: 17px;
+    font-weight: 700;
+}
+
+.brand p, .panel-heading p, .map-toolbar p {
+    margin-top: 2px;
+    color: var(--text-faint);
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+.main-nav { display: flex; gap: 3px; flex: 1 1 auto; }
+
+.nav-link {
+    padding: 7px 14px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    color: var(--text-dim);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-decoration: none;
+    text-transform: uppercase;
+}
+
+.nav-link:hover { background: var(--surface-raised); color: var(--text); }
+
+.nav-link.active {
+    border-color: var(--border-strong);
+    background: var(--surface-raised);
+    color: var(--action-bright);
+}
+
+.mode-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+    padding: 7px 13px;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    background: var(--surface-raised);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+
+.mode-chip.offline { border-color: rgba(242, 166, 61, 0.5); background: var(--attention-soft); color: var(--attention); }
+.mode-chip.online { border-color: rgba(72, 197, 142, 0.5); background: var(--settled-soft); color: var(--settled); }
+.mode-chip.warn { border-color: rgba(232, 57, 43, 0.55); background: var(--critical-soft); color: var(--critical); }
+
+.mode-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 7px currentColor;
+}
+
+/* --------------------------------------------------------------------------
+   System health drawer
+-------------------------------------------------------------------------- */
+
+.health-drawer {
+    padding: 13px 18px;
+    background: var(--surface-soft);
+    border-bottom: 1px solid var(--border);
+}
+
+.health-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+    gap: 8px;
+}
+
+.health-cell {
+    padding: 9px 11px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+}
+
+.health-label {
+    display: block;
+    color: var(--text-faint);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+}
+
+.health-value {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 5px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.health-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor; }
+.health-value.ok { color: var(--settled); }
+.health-value.warn { color: var(--attention); }
+.health-value.neutral { color: var(--text-faint); }
+.health-value.neutral .health-dot { box-shadow: none; }
+
+.health-footer { margin-top: 9px; color: var(--text-faint); font-family: var(--mono); font-size: 10px; }
+
+/* --------------------------------------------------------------------------
+   Layout
+-------------------------------------------------------------------------- */
+
+.page { padding: 14px; display: flex; flex-direction: column; gap: 11px; }
+
+.panel {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+}
+
+.panel-heading { padding: 13px 15px; }
+.horizontal-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+.summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; }
+
+.summary-card {
+    position: relative;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    overflow: hidden;
+}
+
+.summary-card span {
+    color: var(--text-faint);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+}
+
+.summary-card strong {
+    display: block;
+    margin: 5px 0 3px;
+    font-family: var(--mono);
+    font-size: 28px;
+    line-height: 1;
+}
+
+.summary-card small { color: var(--text-faint); font-size: 10px; line-height: 1.45; }
+
+.summary-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 2px;
+    background: var(--border-strong);
+}
+
+.summary-card.is-critical::before { background: var(--critical-bright); }
+.summary-card.is-critical strong { color: var(--critical); }
+.summary-card.is-unlocated::before { background: var(--attention); }
+.summary-card.is-unlocated strong { color: var(--attention); }
+.summary-card.is-degraded::before { background: var(--attention); }
+.summary-card.is-degraded strong { color: var(--attention); }
+.summary-card.is-done::before { background: var(--settled); }
+.summary-card.is-done strong { color: var(--settled); }
+
+/* Three columns: queue, map, selected report. */
+.ops-grid { display: grid; grid-template-columns: 310px minmax(0, 1fr) 350px; gap: 11px; align-items: start; }
+.map-column { min-width: 0; display: flex; flex-direction: column; gap: 11px; }
+.lower-grid { display: grid; grid-template-columns: 1fr 1.25fr; gap: 11px; }
+
+/* --------------------------------------------------------------------------
+   Queue
+-------------------------------------------------------------------------- */
+
+.queue-panel { overflow: hidden; }
+
+.filter-group { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 0 9px 9px; }
+
+.filter-button, .secondary-button, .text-button, .select-input, .search-input {
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--surface-soft);
+    color: var(--text-dim);
+    cursor: pointer;
+}
+
+.filter-button {
+    padding: 7px 3px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.filter-button:hover { border-color: var(--action); color: var(--text); }
+.filter-button.wide { grid-column: span 4; }
+.filter-button.active { border-color: var(--action); background: var(--action-soft); color: var(--action-bright); }
+
+.report-list { max-height: 620px; overflow-y: auto; }
+
+.report-item {
+    position: relative;
+    width: 100%;
+    padding: 12px 13px 12px 15px;
+    border: 0;
+    border-top: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+}
+
+.report-item::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 2px;
+    background: transparent;
+}
+
+.report-item:hover { background: var(--surface-raised); }
+.report-item.active { background: var(--action-soft); }
+.report-item.active::before { background: var(--action); }
+.report-item.critical::before { background: var(--critical-bright); }
+.report-item.assistance::before { background: var(--attention); }
+.report-item.closed { opacity: 0.45; }
+.report-item.closed::before { background: transparent; }
+
+.report-title { display: flex; align-items: flex-start; gap: 9px; }
+.report-main { flex: 1 1 auto; min-width: 0; }
+.report-main strong { display: block; font-family: var(--mono); font-size: 12px; letter-spacing: 0.02em; }
+.report-main small { display: block; margin-top: 3px; color: var(--text-dim); font-size: 11px; }
+
+.report-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 8px 0 0 19px;
+    color: var(--text-faint);
+    font-size: 10px;
+}
+
+.flag-unlocated { color: var(--attention); font-weight: 700; }
+.empty-note { padding: 16px; color: var(--text-faint); font-size: 11px; }
+
+.status-dot { width: 9px; height: 9px; margin-top: 4px; flex: 0 0 auto; border-radius: 50%; }
+.status-dot.critical { background: var(--critical-bright); }
+.status-dot.assistance { background: var(--attention); }
+.status-dot.safe { background: var(--settled); }
+
+/* --------------------------------------------------------------------------
+   Attention pulse
+
+   Only an open critical report pulses. If everything moved, nothing would
+   stand out. Motion is removed for viewers who ask their system to reduce it,
+   and the colour still carries the meaning without it.
+-------------------------------------------------------------------------- */
+
+/*
+   The alarm runs only on a critical report nobody has acknowledged yet, and it
+   stops the moment an operator acknowledges it. Three things move together so
+   it is hard to miss in peripheral vision: the dot brightens, its glow swells,
+   and a ring expands away from it.
+*/
+
+@keyframes alert-core {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(232, 57, 43, 0.9),
+                    0 2px 8px rgba(0, 0, 0, 0.6);
+        filter: brightness(1);
+    }
+    50% {
+        box-shadow: 0 0 16px 5px rgba(232, 57, 43, 0.85),
+                    0 2px 8px rgba(0, 0, 0, 0.6);
+        filter: brightness(1.35);
+    }
+}
+
+@keyframes alert-ring {
+    0% { transform: scale(1); opacity: 0.85; }
+    100% { transform: scale(3.4); opacity: 0; }
+}
+
+.map-marker.alert {
+    border-color: #ffffff;
+    animation: alert-core 1.25s ease-in-out infinite;
+}
+
+.status-dot.alert {
+    position: relative;
+    animation: alert-core 1.25s ease-in-out infinite;
+}
+
+.map-marker.alert::after,
+.status-dot.alert::after {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border: 2px solid var(--critical-bright);
+    border-radius: 50%;
+    animation: alert-ring 1.25s ease-out infinite;
+    pointer-events: none;
+}
+
+/*
+   Motion is never the only carrier. With motion reduced the marker keeps a
+   solid red ring and a static glow, so an unacknowledged critical report is
+   still the loudest thing on screen.
+*/
+@media (prefers-reduced-motion: reduce) {
+    .map-marker.alert,
+    .status-dot.alert { animation: none; }
+
+    .map-marker.alert::after,
+    .status-dot.alert::after { animation: none; opacity: 0.9; }
+
+    .map-marker.alert {
+        box-shadow: 0 0 12px 3px rgba(232, 57, 43, 0.75),
+                    0 2px 8px rgba(0, 0, 0, 0.6);
+    }
+}
+
+/* --------------------------------------------------------------------------
+   Tags and state chips
+-------------------------------------------------------------------------- */
+
+.tag {
+    display: inline-block;
+    padding: 4px 9px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.tag.critical { border-color: rgba(232, 57, 43, 0.45); background: var(--critical-soft); color: var(--critical); }
+.tag.assistance { border-color: rgba(242, 166, 61, 0.42); background: var(--attention-soft); color: var(--attention); }
+.tag.safe { border-color: var(--border-strong); color: var(--text-faint); }
+.tag.neutral { border-color: var(--border-strong); color: var(--text-dim); }
+.tag.active { border-color: rgba(79, 140, 247, 0.5); background: var(--action-soft); color: var(--action-bright); }
+
+.state-chip {
+    display: inline-block;
+    padding: 3px 8px;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.state-chip.state-received { border-color: rgba(242, 166, 61, 0.5); color: var(--attention); }
+.state-chip.state-assigned,
+.state-chip.state-en_route { border-color: rgba(79, 140, 247, 0.5); background: var(--action-soft); color: var(--action-bright); }
+.state-chip.state-responded,
+.state-chip.state-resolved { border-color: rgba(72, 197, 142, 0.5); color: var(--settled); }
+
+.tag.state-received { border-color: rgba(242, 166, 61, 0.45); background: var(--attention-soft); color: var(--attention); }
+.tag.state-acknowledged { border-color: var(--border-strong); color: var(--text-dim); }
+.tag.state-assigned, .tag.state-en_route { border-color: rgba(79, 140, 247, 0.5); background: var(--action-soft); color: var(--action-bright); }
+.tag.state-responded, .tag.state-resolved { border-color: rgba(72, 197, 142, 0.5); background: var(--settled-soft); color: var(--settled); }
+.tag.state-no_action { border-color: var(--border-strong); color: var(--text-faint); }
+
+.relay-ok { border-color: rgba(72, 197, 142, 0.5); color: var(--settled); }
+.relay-warn { border-color: rgba(242, 166, 61, 0.5); background: var(--attention-soft); color: var(--attention); }
+.relay-down { border-color: rgba(232, 57, 43, 0.5); background: var(--critical-soft); color: var(--critical); }
+
+/* --------------------------------------------------------------------------
+   Map
+-------------------------------------------------------------------------- */
+
+.map-panel { position: relative; overflow: hidden; }
+
+.map-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 13px 15px; }
+.map-toolbar-status { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; text-align: right; }
+#last-sync { color: var(--text-faint); font-family: var(--mono); font-size: 10px; white-space: nowrap; }
+
+.map-source {
+    padding: 3px 8px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.map-source.offline { border-color: rgba(72, 197, 142, 0.5); background: var(--settled-soft); color: var(--settled); }
+.map-source.online { border-color: rgba(242, 166, 61, 0.5); background: var(--attention-soft); color: var(--attention); }
+
+#map { width: 100%; height: 470px; background: #0e1519; }
+.network-map { width: 100%; height: 400px; background: #0e1519; border-radius: 0 0 10px 10px; }
+
+/*
+   The tile pack is standard OpenStreetMap, which is drawn for a light page.
+   Inverting and rotating the hue turns it into a dark basemap without needing
+   a second download. It is not a purpose-built dark style, so water and parks
+   land on approximate colours, but it keeps the offline pack as the single
+   source of tiles.
+*/
+.leaflet-tile {
+    filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.88) saturate(0.5);
+}
+
+.leaflet-container { background: #0e1519; }
+
+.leaflet-control-zoom a {
+    background: var(--surface-raised);
+    border-color: var(--border-strong);
+    color: var(--text);
+}
+
+.leaflet-control-zoom a:hover { background: var(--border); color: var(--action-bright); }
+
+/* Leaflet styles a disabled zoom button light grey by default, which shows as
+   a white square on a dark panel once the pack's zoom limit is reached. */
+.leaflet-control-zoom a.leaflet-disabled,
+.leaflet-control-zoom a.leaflet-disabled:hover {
+    background: var(--surface-soft);
+    color: var(--text-faint);
+    opacity: 0.6;
+}
+
+.leaflet-bar { border: 1px solid var(--border-strong); box-shadow: none; }
+
+.leaflet-control-attribution {
+    background: rgba(11, 17, 22, 0.82);
+    color: var(--text-faint);
+    font-size: 9px;
+}
+
+.leaflet-control-attribution a { color: var(--text-dim); }
+
+.leaflet-tooltip {
+    background: var(--surface-raised);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    font-size: 10px;
+    box-shadow: none;
+}
+
+.leaflet-tooltip::before { border-top-color: var(--border-strong); }
+
+.leaflet-tooltip .tt-sep { margin: 0 5px; color: var(--text-faint); }
+.leaflet-tooltip .tt-state { color: var(--text-dim); }
+
+.map-marker {
+    position: relative;
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    border-radius: 50%;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+.map-marker.critical { background: var(--critical-bright); }
+.map-marker.assistance { background: var(--attention); }
+
+/*
+   Three status colours on the map: red critical, amber assistance, green safe.
+   A safe report is filled like the other two so the set reads as one scale,
+   and it stays smaller so it does not carry the weight of an emergency. Fill
+   means a status; the hollow ring below means a case that has been closed.
+
+   Both stay fully opaque so they remain readable when an operator is checking
+   which parts of a zone have been covered.
+*/
+.map-marker.safe {
+    width: 13px;
+    height: 13px;
+    background: var(--settled);
+    box-shadow: none;
+}
+
+/*
+   A closed case: a ring in the colour of what was reported, not a colour of
+   its own. Colour answers "what came in", fill answers "does it still need
+   attention". Keeping those on separate channels means a resolved critical is
+   still visibly a critical, and green is left meaning only one thing.
+
+   Smaller, unfilled, no shadow, never animated, so it recedes behind the open
+   cases without disappearing.
+*/
+.map-marker.done {
+    width: 15px;
+    height: 15px;
+    border-width: 2px;
+    box-shadow: none;
+}
+
+.map-marker.critical.done {
+    border-color: var(--critical-bright);
+    background: rgba(232, 57, 43, 0.16);
+}
+
+.map-marker.assistance.done {
+    border-color: var(--attention);
+    background: rgba(242, 166, 61, 0.16);
+}
+
+.uav-marker, .relay-marker {
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.75);
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+    color: white;
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 700;
+}
+
+.uav-marker { width: 34px; height: 20px; background: var(--action); }
+
+/* Airborne gets a halo so the aircraft reads as flying, not parked. */
+.uav-marker.airborne { box-shadow: 0 0 0 3px rgba(79, 140, 247, 0.28), 0 3px 9px rgba(0, 0, 0, 0.6); }
+
+/* Base is a fixed reference point, styled so it never competes with a case. */
+.base-marker {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 20px;
+    border: 1px dashed var(--text-dim);
+    border-radius: 4px;
+    background: rgba(17, 35, 42, 0.9);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+.relay-marker { width: 40px; height: 20px; background: #2f8f68; }
+.relay-marker.relay-warn { background: #b87a1e; }
+.relay-marker.relay-down { background: var(--critical-bright); }
+
+.distance-tooltip {
+    background: var(--action);
+    border: 0;
+    color: white;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    box-shadow: none;
+}
+
+.distance-tooltip::before { display: none; }
+.distance-tooltip.returning { background: var(--settled); color: #07120d; }
+
+.routing-note {
+    margin-top: 10px;
+    padding: 8px 10px;
+    border-left: 2px solid var(--action);
+    border-radius: 0 6px 6px 0;
+    background: var(--action-soft);
+    color: var(--text-dim);
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+/* Wheel-zoom hint, shown only when someone scrolls without the modifier. */
+.map-hint {
+    position: absolute;
+    inset: 0;
+    z-index: 900;
+    display: grid;
+    place-items: center;
+    background: rgba(9, 14, 18, 0.55);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 160ms ease;
+}
+
+.map-hint.show { opacity: 1; }
+
+.map-legend {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    z-index: 600;
+    display: flex;
+    gap: 12px;
+    padding: 6px 11px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: rgba(11, 17, 22, 0.88);
+    color: var(--text-dim);
+    font-size: 10px;
+    pointer-events: none;
+}
+
+.map-legend span { display: flex; align-items: center; gap: 5px; }
+.map-legend .key { width: 8px; height: 8px; border-radius: 50%; }
+.map-legend .key.critical { background: var(--critical-bright); }
+.map-legend .key.assistance { background: var(--attention); }
+.map-legend .key.safe { background: var(--settled); }
+/* A plain ring, because the legend entry explains the shape, not a colour. */
+.map-legend .key.done { border: 1.5px solid var(--text-dim); background: transparent; }
+.map-legend .key.uav { border-radius: 2px; background: var(--action); }
+
+.legend-toggle {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding-left: 10px;
+    border-left: 1px solid var(--border-strong);
+    color: var(--text-dim);
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.legend-toggle input { margin: 0; accent-color: var(--action); cursor: pointer; }
+
+/* --------------------------------------------------------------------------
+   Selected report panel
+-------------------------------------------------------------------------- */
+
+.detail-panel { padding: 15px; min-height: 420px; position: sticky; top: 14px; }
+
+.detail-empty {
+    display: grid;
+    place-items: center;
+    gap: 12px;
+    min-height: 380px;
+    text-align: center;
+}
+
+.detail-empty p { max-width: 210px; color: var(--text-faint); font-size: 11px; line-height: 1.6; }
+
+.detail-empty-mark {
+    width: 40px;
+    height: 40px;
+    border: 1px dashed var(--border-strong);
+    border-radius: 50%;
+}
+
+.selected-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+
+.record-id {
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+}
+
+.selected-heading h3 { margin-top: 4px; }
+
+.inline-warning {
+    margin-top: 11px;
+    padding: 9px 10px;
+    border-left: 2px solid var(--attention);
+    border-radius: 0 6px 6px 0;
+    background: var(--attention-soft);
+    color: var(--attention);
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+.lifecycle { margin: 14px 0; }
+.lifecycle-track { display: flex; gap: 3px; }
+
+.lifecycle-seg {
+    flex: 1 1 0;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--border-strong);
+}
+
+.lifecycle-seg.done { background: var(--action); }
+
+.lifecycle-caption {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 7px;
+}
+
+.lifecycle-caption strong {
+    color: var(--action-bright);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.lifecycle-caption span { color: var(--text-faint); font-family: var(--mono); font-size: 10px; }
+.lifecycle-note { color: var(--text-faint); font-size: 11px; }
+
+.case-details { display: grid; grid-template-columns: repeat(2, 1fr); gap: 11px; margin: 13px 0; }
+.case-details div { min-width: 0; }
+
+.case-details dt {
+    color: var(--text-faint);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.case-details dd {
+    margin: 4px 0 0;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    word-break: break-word;
+}
+
+.case-notes { padding-top: 11px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 11px; line-height: 1.55; }
+
+.action-group { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 13px; }
+.inline-actions { display: flex; gap: 6px; }
+.action-note { width: 100%; color: var(--text-faint); font-size: 10px; line-height: 1.5; }
+
+.record-link {
+    display: inline-block;
+    margin-top: 12px;
+    color: var(--action-bright);
+    font-size: 11px;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.record-link:hover { text-decoration: underline; }
+
+/* --------------------------------------------------------------------------
+   Buttons
+
+   The primary action is blue. Red is not used on any button, because no action
+   the operator takes here is itself an emergency.
+-------------------------------------------------------------------------- */
+
+.primary-button {
+    padding: 9px 14px;
+    border: 1px solid var(--action);
+    border-radius: 6px;
+    background: var(--action);
+    color: #071018;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+
+.primary-button:hover { background: var(--action-bright); border-color: var(--action-bright); }
+.primary-button.small { padding: 7px 11px; font-size: 9px; }
+
+.secondary-button, .text-button {
+    padding: 9px 13px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.secondary-button:hover, .text-button:hover { border-color: var(--action); color: var(--text); }
+.text-button { padding: 7px 10px; font-size: 9px; white-space: nowrap; }
+
+.primary-button:disabled,
+.secondary-button:disabled,
+.text-button:disabled { cursor: not-allowed; opacity: 0.4; }
+
+/* --------------------------------------------------------------------------
+   UAV panel
+-------------------------------------------------------------------------- */
+
+.uav-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 0 15px 12px; }
+
+.uav-stats span {
+    color: var(--text-faint);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.uav-stats strong { display: block; margin-top: 4px; font-family: var(--mono); font-size: 14px; }
+
+.payload-block { margin: 0 15px; padding-top: 11px; border-top: 1px solid var(--border); }
+
+.block-label {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--text-faint);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+}
+
+.block-label em { color: var(--text); font-family: var(--mono); font-style: normal; font-size: 11px; }
+
+.payload-list { margin: 8px 0 0; padding: 0; list-style: none; }
+
+.payload-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--surface-raised);
+    font-size: 11px;
+}
+
+.payload-list li:last-child { border-bottom: 0; }
+.payload-list em { color: var(--text-faint); font-family: var(--mono); font-style: normal; font-size: 10px; }
+.payload-note { margin-top: 8px; color: var(--text-faint); font-size: 10px; line-height: 1.5; }
+
+.uav-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 12px 15px 15px;
+    padding-top: 11px;
+    border-top: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 10px;
+}
+
+/* --------------------------------------------------------------------------
+   Tables
+-------------------------------------------------------------------------- */
+
+.table-wrapper { overflow-x: auto; padding: 0 15px 15px; }
+table { width: 100%; border-collapse: collapse; font-size: 11px; }
+
+th {
+    padding: 0 8px 8px;
+    color: var(--text-faint);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-align: left;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+td { padding: 9px 8px; border-top: 1px solid var(--border); vertical-align: middle; }
+td:first-child { font-family: var(--mono); }
+
+.records-table tbody tr { cursor: pointer; }
+.records-table tbody tr:hover { background: var(--surface-raised); }
+.records-table .row-critical td:first-child { box-shadow: inset 2px 0 0 var(--critical-bright); }
+.records-table .row-selected { background: var(--action-soft); }
+.records-table .row-offline { opacity: 0.55; }
+
+.records-controls { display: flex; gap: 8px; padding: 0 15px 12px; }
+.search-input { flex: 1 1 auto; padding: 8px 11px; color: var(--text); font-size: 12px; cursor: text; }
+.search-input::placeholder { color: var(--text-faint); }
+.select-input { padding: 8px 11px; color: var(--text); font-size: 12px; }
+.search-input:focus, .select-input:focus { outline: 1px solid var(--action); border-color: var(--action); }
+
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; padding: 0 15px 16px; }
+
+.history-list { margin: 10px 0 0; padding-left: 17px; }
+.history-list li { margin-bottom: 8px; font-size: 11px; }
+.history-list strong { display: block; }
+.history-list span { color: var(--text-faint); font-family: var(--mono); font-size: 10px; }
+
+.priority-box {
+    margin-top: 10px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface-soft);
+}
+
+.priority-total { font-family: var(--mono); font-size: 11px; font-weight: 700; }
+.priority-row { margin-top: 5px; color: var(--text-dim); font-family: var(--mono); font-size: 10px; }
+
+/* --------------------------------------------------------------------------
+   Dispatch confirmation modal
+-------------------------------------------------------------------------- */
+
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(4, 8, 11, 0.7);
+    backdrop-filter: blur(2px);
+}
+
+.modal {
+    width: min(460px, 100%);
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 20px;
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    background: var(--surface);
+    box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6);
+}
+
+.modal h3 { font-size: 14px; letter-spacing: 0.04em; text-transform: uppercase; }
+.modal-subtitle { margin-top: 6px; color: var(--text-dim); font-family: var(--mono); font-size: 11px; }
+
+.modal-warnings {
+    margin: 15px 0;
+    padding: 11px 13px;
+    border-left: 2px solid var(--attention);
+    border-radius: 0 6px 6px 0;
+    background: var(--attention-soft);
+}
+
+.modal-warnings ul { margin: 8px 0 0; padding-left: 16px; }
+.modal-warnings li { margin-bottom: 6px; color: var(--attention); font-size: 11px; line-height: 1.55; }
+.modal-actions { justify-content: flex-end; margin-top: 16px; }
+.modal-narrow { width: min(400px, 100%); }
+
+.confirm-body {
+    margin-top: 14px;
+    color: var(--text-dim);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+/* --------------------------------------------------------------------------
+   Notification
+-------------------------------------------------------------------------- */
+
+.notification {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 3000;
+    max-width: 340px;
+    padding: 11px 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: 7px;
+    background: var(--surface-raised);
+    color: var(--text);
+    box-shadow: var(--shadow);
+    font-size: 11px;
+    line-height: 1.55;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(8px);
+    transition: 180ms ease;
+}
+
+.notification.show { opacity: 1; transform: translateY(0); }
+
+/* --------------------------------------------------------------------------
+   Responsive
+-------------------------------------------------------------------------- */
+
+@media (max-width: 1500px) {
+    .ops-grid { grid-template-columns: 290px minmax(0, 1fr) 320px; }
+}
+
+@media (max-width: 1280px) {
+    /* The detail panel moves under the map rather than shrinking further. */
+    .ops-grid { grid-template-columns: 290px minmax(0, 1fr); }
+    .detail-panel { grid-column: 1 / -1; position: static; min-height: 0; }
+    .detail-empty { min-height: 120px; }
+    .lower-grid { grid-template-columns: 1fr; }
+    .detail-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 860px) {
+    .topbar { flex-wrap: wrap; padding: 10px 12px; }
+    .main-nav { order: 3; width: 100%; }
+    .page { padding: 9px; }
+    .summary-grid { grid-template-columns: repeat(2, 1fr); }
+    .ops-grid { grid-template-columns: 1fr; }
+    .report-list { max-height: 320px; }
+    #map { height: 420px; }
+}
+
+@media (max-width: 480px) {
+    .brand p { display: none; }
+    .summary-grid { grid-template-columns: 1fr; }
+    .filter-group { grid-template-columns: repeat(2, 1fr); }
+    .filter-button.wide { grid-column: span 2; }
+    .map-toolbar { flex-direction: column; align-items: flex-start; }
+    .map-toolbar-status { align-items: flex-start; text-align: left; }
+    .map-legend { display: none; }
+    .case-details { grid-template-columns: 1fr; }
+    .records-controls { flex-direction: column; }
+}

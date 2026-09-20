@@ -1,0 +1,318 @@
+{% extends "base.html" %}
+
+{% block title %}Operations | SAGIP Command{% endblock %}
+
+{% block content %}
+<section class="summary-grid" aria-label="Queue summary">
+    <article class="summary-card">
+        <span>Active</span>
+        <strong id="count-active">0</strong>
+        <small>Open reports awaiting or under response</small>
+    </article>
+
+    <article class="summary-card is-critical">
+        <span>Critical</span>
+        <strong id="count-critical">0</strong>
+        <small>Reported critical, still open</small>
+    </article>
+
+    <article class="summary-card is-unlocated">
+        <span>Unlocated</span>
+        <strong id="count-unlocated">0</strong>
+        <small>Open with no usable coordinate</small>
+    </article>
+
+    <article class="summary-card is-done">
+        <span>Responded</span>
+        <strong id="count-responded">0</strong>
+        <small>UAV response recorded or case resolved</small>
+    </article>
+</section>
+
+<section class="ops-grid">
+    <!-- Column 1: the queue -->
+    <aside class="panel queue-panel">
+        <div class="panel-heading">
+            <h2>Report Queue</h2>
+            <p id="queue-note">Ordered by urgency and waiting time</p>
+        </div>
+
+        <div class="filter-group" aria-label="Queue filters">
+            <button type="button" class="filter-button active" data-filter="OPEN">
+                Active
+            </button>
+
+            <button type="button" class="filter-button" data-filter="CRITICAL">
+                Critical
+            </button>
+
+            <button type="button" class="filter-button" data-filter="UNLOCATED">
+                Unlocated
+            </button>
+
+            <button type="button" class="filter-button" data-filter="CLOSED">
+                Closed
+            </button>
+
+            <button type="button" class="filter-button wide" data-filter="ALL">
+                Show all reports
+            </button>
+        </div>
+
+        <div id="report-list" class="report-list"></div>
+    </aside>
+
+    <!-- Column 2: map, then UAV and activity -->
+    <section class="map-column">
+        <div class="panel map-panel">
+            <div class="map-toolbar">
+                <div>
+                    <h2>Operational Map</h2>
+
+                    <p>
+                        Shaded circles show reported position uncertainty.
+                        Reports without a usable coordinate are not plotted.
+                    </p>
+                </div>
+
+                <div class="map-toolbar-status">
+                    <span id="map-source" class="map-source">
+                        Checking map source
+                    </span>
+
+                    <span id="last-sync">Waiting for data</span>
+                </div>
+            </div>
+
+            <div
+                id="map"
+                aria-label="Map showing reported emergency locations"
+            ></div>
+
+            <div class="map-legend">
+                <span><i class="key critical"></i>Critical</span>
+                <span><i class="key assistance"></i>Assistance</span>
+                <span><i class="key safe"></i>Safe</span>
+                <span><i class="key done"></i>Closed</span>
+                <span><i class="key uav"></i>UAV</span>
+
+                <label class="legend-toggle">
+                    <input type="checkbox" id="show-closed" checked>
+                    Show closed
+                </label>
+            </div>
+        </div>
+
+        <div class="lower-grid">
+            <article class="panel">
+                <div class="panel-heading horizontal-heading">
+                    <div>
+                        <h2>UAV Operations</h2>
+                        <p>Reported aircraft condition</p>
+                    </div>
+
+                    <span id="uav-state" class="tag neutral">Loading</span>
+                </div>
+
+                <div class="uav-stats">
+                    <div>
+                        <span>Battery</span>
+                        <strong id="uav-battery">--</strong>
+                    </div>
+
+                    <div>
+                        <span>GNSS</span>
+                        <strong id="uav-gnss">--</strong>
+                    </div>
+
+                    <div>
+                        <span>Link</span>
+                        <strong id="uav-link">--</strong>
+                    </div>
+                </div>
+
+                <div class="payload-block">
+                    <span class="block-label">
+                        Payload
+                        <em id="payload-mass"></em>
+                    </span>
+
+                    <ul id="payload-list" class="payload-list"></ul>
+
+                    <p class="payload-note">
+                        Masses are placeholders until the aircraft has been
+                        weighed and flown with the load.
+                    </p>
+                </div>
+
+                <div class="uav-footer">
+                    <p id="uav-assignment">No active assignment</p>
+                    <div id="uav-actions" class="inline-actions"></div>
+                </div>
+            </article>
+
+            <article class="panel">
+                <div class="panel-heading horizontal-heading">
+                    <div>
+                        <h2>Recent Activity</h2>
+                        <p>System and operator actions</p>
+                    </div>
+
+                    <button type="button" id="export-button" class="text-button">
+                        Export CSV
+                    </button>
+                </div>
+
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Event</th>
+                                <th>Zone</th>
+                            </tr>
+                        </thead>
+
+                        <tbody id="activity-body"></tbody>
+                    </table>
+                </div>
+            </article>
+        </div>
+    </section>
+
+    <!--
+        Column 3: the selected report.
+
+        A fixed column rather than a card floating over the map. An overlay
+        covers the markers immediately around the selected one, which is the
+        area the operator is actually reading, and it gets worse the more
+        reports there are.
+    -->
+    <aside class="panel detail-panel" aria-label="Selected report">
+        <div id="detail-empty" class="detail-empty">
+            <span class="detail-empty-mark"></span>
+            <p>Select a report from the queue to see its detail here.</p>
+        </div>
+
+        <article id="selected-case" class="selected-case hidden" aria-live="polite">
+            <div class="selected-heading">
+                <div>
+                    <span id="selected-id" class="record-id"></span>
+                    <h3 id="selected-heading"></h3>
+                </div>
+
+                <span id="selected-status" class="tag"></span>
+            </div>
+
+            <p id="location-warning" class="inline-warning hidden">
+                No usable coordinate was received with this report. A UAV
+                destination cannot be set until a position is obtained.
+            </p>
+
+            <div class="lifecycle" id="selected-lifecycle"></div>
+
+            <dl class="case-details">
+                <div>
+                    <dt>Device</dt>
+                    <dd id="selected-device"></dd>
+                </div>
+
+                <div>
+                    <dt>Zone</dt>
+                    <dd id="selected-zone"></dd>
+                </div>
+
+                <div>
+                    <dt>Communication path</dt>
+                    <dd id="selected-path"></dd>
+                </div>
+
+                <div>
+                    <dt>Position source</dt>
+                    <dd id="selected-position"></dd>
+                </div>
+
+                <div>
+                    <dt>Device battery</dt>
+                    <dd id="selected-battery"></dd>
+                </div>
+
+                <div>
+                    <dt>Received</dt>
+                    <dd id="selected-received"></dd>
+                </div>
+
+                <div>
+                    <dt>Ground responder</dt>
+                    <dd id="selected-responder"></dd>
+                </div>
+            </dl>
+
+            <p id="routing-note" class="routing-note"></p>
+
+            <p id="selected-note" class="case-notes"></p>
+
+            <div class="action-group" id="selected-actions"></div>
+
+            <a id="selected-record-link" class="record-link" href="#">
+                Open full record
+            </a>
+        </article>
+    </aside>
+</section>
+
+<!--
+    Dispatch confirmation. A pin on a map reads as a known position, so this
+    step is where an operator is told what the coordinate actually is before
+    an aircraft is committed to it.
+-->
+<!--
+    Confirmation for actions that close a case. Closing is one click away from
+    the buttons an operator uses constantly, and until this existed a misclick
+    was unrecoverable without restarting the server.
+-->
+<div id="confirm-modal" class="modal-backdrop hidden" role="dialog"
+     aria-modal="true" aria-labelledby="confirm-title">
+    <div class="modal modal-narrow">
+        <h3 id="confirm-title">Confirm</h3>
+
+        <p class="modal-subtitle" id="confirm-subtitle"></p>
+        <p class="confirm-body" id="confirm-body"></p>
+
+        <div class="action-group modal-actions">
+            <button type="button" id="confirm-cancel" class="secondary-button">
+                Cancel
+            </button>
+
+            <button type="button" id="confirm-accept" class="primary-button">
+                Confirm
+            </button>
+        </div>
+    </div>
+</div>
+
+<div id="dispatch-modal" class="modal-backdrop hidden" role="dialog"
+     aria-modal="true" aria-labelledby="dispatch-modal-title">
+    <div class="modal">
+        <h3 id="dispatch-modal-title">Confirm UAV dispatch</h3>
+
+        <p class="modal-subtitle" id="dispatch-modal-subtitle"></p>
+
+        <div id="dispatch-modal-body"></div>
+
+        <div class="action-group modal-actions">
+            <button type="button" id="dispatch-cancel" class="secondary-button">
+                Cancel
+            </button>
+
+            <button type="button" id="dispatch-confirm" class="primary-button">
+                Confirm dispatch
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

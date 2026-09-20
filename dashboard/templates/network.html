@@ -1,0 +1,84 @@
+
+{% extends "base.html" %}
+
+{% block title %}Network | SAGIP Command{% endblock %}
+
+{% block content %}
+<section class="summary-grid" aria-label="Network summary">
+    <article class="summary-card">
+        <span>Relays online</span>
+        <strong id="relay-online">0</strong>
+        <small>Heartbeat received recently</small>
+    </article>
+
+    <article class="summary-card is-degraded">
+        <span>Degraded</span>
+        <strong id="relay-degraded">0</strong>
+        <small>Reachable but weak or low battery</small>
+    </article>
+
+    <article class="summary-card is-critical">
+        <span>Offline</span>
+        <strong id="relay-offline">0</strong>
+        <small>No heartbeat</small>
+    </article>
+
+    <article class="summary-card">
+        <span>Packets forwarded</span>
+        <strong id="relay-packets">0</strong>
+        <small>Across all relays this session</small>
+    </article>
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <h2>Relay Network</h2>
+
+        <p>
+            Relay condition is reported from heartbeats. A relay shown online
+            has been heard from; it does not follow that every point near it can
+            reach it.
+        </p>
+    </div>
+
+    <div class="table-wrapper">
+        <table class="records-table">
+            <thead>
+                <tr>
+                    <th>Relay</th>
+                    <th>Site</th>
+                    <th>State</th>
+                    <th>Battery</th>
+                    <th>RSSI</th>
+                    <th>SNR</th>
+                    <th>Hops to base</th>
+                    <th>Forwarded</th>
+                    <th>Duplicates dropped</th>
+                    <th>Last heartbeat</th>
+                </tr>
+            </thead>
+
+            <tbody id="relay-body"></tbody>
+        </table>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <h2>Relay Placement</h2>
+
+        <p>
+            Relay sites and the pilot test area boundary. The boundary is where
+            the prototype is deployed and tested, not an area where delivery is
+            guaranteed.
+        </p>
+    </div>
+
+    <div id="relay-map" class="network-map"
+         aria-label="Map showing relay node placement"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/network.js') }}"></script>
+{% endblock %}

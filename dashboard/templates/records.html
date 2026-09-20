@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}Records | SAGIP Command{% endblock %}
+
+{% block content %}
+<section class="panel records-panel">
+    <div class="panel-heading horizontal-heading">
+        <div>
+            <h2>Emergency Records</h2>
+
+            <p>
+                Every report received by the base station, with its full
+                response history.
+            </p>
+        </div>
+
+        <button type="button" id="export-records" class="text-button">
+            Export CSV
+        </button>
+    </div>
+
+    <div class="records-controls">
+        <input
+            type="search"
+            id="records-search"
+            class="search-input"
+            placeholder="Search by emergency or device ID"
+            aria-label="Search records"
+        >
+
+        <select id="records-state" class="select-input" aria-label="Filter by state">
+            <option value="ALL">All states</option>
+            <option value="OPEN">Open only</option>
+            <option value="RECEIVED">Received</option>
+            <option value="ACKNOWLEDGED">Acknowledged</option>
+            <option value="ASSIGNED">Assigned</option>
+            <option value="EN_ROUTE">En route</option>
+            <option value="RESPONDED">Responded</option>
+            <option value="RESOLVED">Resolved</option>
+            <option value="NO_ACTION">No action</option>
+        </select>
+    </div>
+
+    <div class="table-wrapper">
+        <table class="records-table">
+            <thead>
+                <tr>
+                    <th>Emergency ID</th>
+                    <th>Device</th>
+                    <th>Reported</th>
+                    <th>Requested</th>
+                    <th>Position</th>
+                    <th>Path</th>
+                    <th>State</th>
+                    <th>Received</th>
+                </tr>
+            </thead>
+
+            <tbody id="records-body"></tbody>
+        </table>
+    </div>
+</section>
+
+<section class="panel record-detail hidden" id="record-detail">
+    <div class="panel-heading horizontal-heading">
+        <div>
+            <span id="detail-id" class="record-id"></span>
+            <h2 id="detail-heading"></h2>
+        </div>
+
+        <span id="detail-status" class="tag"></span>
+    </div>
+
+    <div class="detail-grid">
+        <div>
+            <h3 class="block-label">Response history</h3>
+            <ol id="detail-history" class="history-list"></ol>
+        </div>
+
+        <div>
+            <h3 class="block-label">Priority breakdown</h3>
+
+            <div id="detail-priority" class="priority-box"></div>
+
+            <p class="payload-note">
+                The score orders the queue. It is a ranking aid built from
+                reported information, not a measurement of the situation.
+            </p>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/records.js') }}"></script>
+{% endblock %}

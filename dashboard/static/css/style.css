@@ -56,17 +56,18 @@
 
     /* Glass surfaces: translucent panels over the nebula backdrop, blurred
        so whatever sits behind never reads as clutter through the panel. */
-    --glass: rgba(18, 27, 33, 0.58);
-    --glass-strong: rgba(23, 35, 42, 0.74);
-    --glass-border: rgba(148, 190, 210, 0.14);
-    --blur: 13px;
+    --glass: rgba(18, 27, 33, 0.66);
+    --glass-strong: rgba(23, 35, 42, 0.82);
+    --glass-border: rgba(148, 190, 210, 0.12);
+    --blur: 9px;
 
-    /* Glow: an accent's own colour thrown as a soft halo. Used sparingly, on
-       active/hover states only, so it still reads as emphasis. */
-    --glow-action: 0 0 1px rgba(79, 140, 247, 0.7), 0 0 16px rgba(79, 140, 247, 0.26);
-    --glow-critical: 0 0 1px rgba(232, 57, 43, 0.7), 0 0 16px rgba(232, 57, 43, 0.3);
-    --glow-attention: 0 0 1px rgba(242, 166, 61, 0.7), 0 0 16px rgba(242, 166, 61, 0.26);
-    --glow-settled: 0 0 1px rgba(72, 197, 142, 0.7), 0 0 16px rgba(72, 197, 142, 0.26);
+    /* Glow: an accent's own colour thrown as a soft halo. Kept small and used
+       only on persistent status indicators, not on hover, so it reads as a
+       state rather than a flourish. */
+    --glow-action: 0 0 1px rgba(79, 140, 247, 0.55), 0 0 9px rgba(79, 140, 247, 0.16);
+    --glow-critical: 0 0 1px rgba(232, 57, 43, 0.55), 0 0 9px rgba(232, 57, 43, 0.18);
+    --glow-attention: 0 0 1px rgba(242, 166, 61, 0.55), 0 0 9px rgba(242, 166, 61, 0.16);
+    --glow-settled: 0 0 1px rgba(72, 197, 142, 0.55), 0 0 9px rgba(72, 197, 142, 0.16);
 }
 
 * { box-sizing: border-box; }
@@ -87,8 +88,8 @@ body {
         radial-gradient(1100px 560px at 14% -8%, rgba(79, 140, 247, 0.10) 0%, transparent 55%),
         radial-gradient(900px 620px at 88% 8%, rgba(72, 197, 142, 0.06) 0%, transparent 60%),
         radial-gradient(1400px 900px at 50% 110%, rgba(20, 34, 43, 0.9) 0%, transparent 65%),
-        linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+        linear-gradient(rgba(255, 255, 255, 0.078) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.078) 1px, transparent 1px),
         var(--bg);
     background-size: auto, auto, auto, 42px 42px, 42px 42px, auto;
     background-attachment: fixed;
@@ -179,7 +180,6 @@ h3 { font-size: 15px; }
     border-color: rgba(79, 140, 247, 0.35);
     background: var(--action-soft);
     color: var(--action-bright);
-    box-shadow: 0 0 16px rgba(79, 140, 247, 0.18) inset;
 }
 
 .mode-chip {
@@ -312,10 +312,7 @@ h3 { font-size: 15px; }
     backdrop-filter: blur(var(--blur));
     -webkit-backdrop-filter: blur(var(--blur));
     overflow: hidden;
-    transition: transform 180ms ease, box-shadow 180ms ease;
 }
-
-.summary-card:hover { transform: translateY(-2px); }
 
 .summary-card span {
     color: var(--text-faint);
@@ -343,17 +340,14 @@ h3 { font-size: 15px; }
     background: var(--border-strong);
 }
 
-.summary-card.is-critical::before { background: var(--critical-bright); box-shadow: 0 0 12px var(--critical-bright); }
+.summary-card.is-critical::before { background: var(--critical-bright); box-shadow: 0 0 6px var(--critical-bright); }
 .summary-card.is-critical strong { color: var(--critical); }
-.summary-card.is-critical:hover { box-shadow: var(--glow-critical); }
-.summary-card.is-unlocated::before { background: var(--attention); box-shadow: 0 0 12px var(--attention); }
+.summary-card.is-unlocated::before { background: var(--attention); box-shadow: 0 0 6px var(--attention); }
 .summary-card.is-unlocated strong { color: var(--attention); }
-.summary-card.is-degraded::before { background: var(--attention); box-shadow: 0 0 12px var(--attention); }
+.summary-card.is-degraded::before { background: var(--attention); box-shadow: 0 0 6px var(--attention); }
 .summary-card.is-degraded strong { color: var(--attention); }
-.summary-card.is-unlocated:hover, .summary-card.is-degraded:hover { box-shadow: var(--glow-attention); }
-.summary-card.is-done::before { background: var(--settled); box-shadow: 0 0 12px var(--settled); }
+.summary-card.is-done::before { background: var(--settled); box-shadow: 0 0 6px var(--settled); }
 .summary-card.is-done strong { color: var(--settled); }
-.summary-card.is-done:hover { box-shadow: var(--glow-settled); }
 
 /* Three columns: queue, map, selected report. */
 .ops-grid { display: grid; grid-template-columns: 310px minmax(0, 1fr) 350px; gap: 11px; align-items: start; }
@@ -415,9 +409,9 @@ h3 { font-size: 15px; }
 
 .report-item:hover { background: rgba(255, 255, 255, 0.04); }
 .report-item.active { background: var(--action-soft); }
-.report-item.active::before { background: var(--action); box-shadow: 0 0 10px var(--action); }
-.report-item.critical::before { background: var(--critical-bright); box-shadow: 0 0 8px var(--critical-bright); }
-.report-item.assistance::before { background: var(--attention); box-shadow: 0 0 8px var(--attention); }
+.report-item.active::before { background: var(--action); box-shadow: 0 0 5px var(--action); }
+.report-item.critical::before { background: var(--critical-bright); box-shadow: 0 0 4px var(--critical-bright); }
+.report-item.assistance::before { background: var(--attention); box-shadow: 0 0 4px var(--attention); }
 .report-item.closed { opacity: 0.45; }
 .report-item.closed::before { background: transparent; box-shadow: none; }
 
@@ -658,8 +652,8 @@ h3 { font-size: 15px; }
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55), inset 0 0 3px rgba(255, 255, 255, 0.2);
 }
 
-.map-marker.critical { background-color: var(--critical-bright); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55), inset 0 0 3px rgba(255, 255, 255, 0.2), 0 0 9px rgba(232, 57, 43, 0.5); }
-.map-marker.assistance { background-color: var(--attention); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55), inset 0 0 3px rgba(255, 255, 255, 0.2), 0 0 9px rgba(242, 166, 61, 0.45); }
+.map-marker.critical { background-color: var(--critical-bright); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55), inset 0 0 3px rgba(255, 255, 255, 0.2), 0 0 5px rgba(232, 57, 43, 0.35); }
+.map-marker.assistance { background-color: var(--attention); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55), inset 0 0 3px rgba(255, 255, 255, 0.2), 0 0 5px rgba(242, 166, 61, 0.3); }
 
 /*
    Three status colours on the map: red critical, amber assistance, green safe.
@@ -991,14 +985,12 @@ h3 { font-size: 15px; }
     letter-spacing: 0.05em;
     text-transform: uppercase;
     cursor: pointer;
-    transition: box-shadow 180ms ease, transform 180ms ease, background 180ms ease;
+    transition: background 150ms ease, border-color 150ms ease;
 }
 
 .primary-button:hover {
     background: linear-gradient(135deg, var(--action-bright), var(--action));
     border-color: var(--action-bright);
-    box-shadow: var(--glow-action);
-    transform: translateY(-1px);
 }
 
 .primary-button.small { padding: 7px 11px; font-size: 9px; }
@@ -1011,12 +1003,12 @@ h3 { font-size: 15px; }
     text-transform: uppercase;
 }
 
-.secondary-button:hover, .text-button:hover { border-color: var(--action); color: var(--text); box-shadow: var(--glow-action); }
+.secondary-button:hover, .text-button:hover { border-color: var(--action); color: var(--text); }
 .text-button { padding: 7px 10px; font-size: 9px; white-space: nowrap; }
 
 .primary-button:disabled,
 .secondary-button:disabled,
-.text-button:disabled { cursor: not-allowed; opacity: 0.4; box-shadow: none; transform: none; }
+.text-button:disabled { cursor: not-allowed; opacity: 0.4; }
 
 /* --------------------------------------------------------------------------
    UAV panel

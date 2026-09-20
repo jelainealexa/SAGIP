@@ -21,7 +21,7 @@
 --------------------------------------------------------------------------- */
 
 :root {
-    --bg: #0b1116;
+    --bg: #090d12;
     --surface: #121c22;
     --surface-raised: #17232a;
     --surface-soft: #0f181d;
@@ -52,7 +52,21 @@
     --action-soft: rgba(79, 140, 247, 0.15);
 
     --mono: "JetBrains Mono", "Consolas", "Menlo", monospace;
-    --shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+    --shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+
+    /* Glass surfaces: translucent panels over the nebula backdrop, blurred
+       so whatever sits behind never reads as clutter through the panel. */
+    --glass: rgba(18, 27, 33, 0.58);
+    --glass-strong: rgba(23, 35, 42, 0.74);
+    --glass-border: rgba(148, 190, 210, 0.14);
+    --blur: 13px;
+
+    /* Glow: an accent's own colour thrown as a soft halo. Used sparingly, on
+       active/hover states only, so it still reads as emphasis. */
+    --glow-action: 0 0 1px rgba(79, 140, 247, 0.7), 0 0 16px rgba(79, 140, 247, 0.26);
+    --glow-critical: 0 0 1px rgba(232, 57, 43, 0.7), 0 0 16px rgba(232, 57, 43, 0.3);
+    --glow-attention: 0 0 1px rgba(242, 166, 61, 0.7), 0 0 16px rgba(242, 166, 61, 0.26);
+    --glow-settled: 0 0 1px rgba(72, 197, 142, 0.7), 0 0 16px rgba(72, 197, 142, 0.26);
 }
 
 * { box-sizing: border-box; }
@@ -61,12 +75,23 @@
    dropdown in their dark variants instead of light-on-light. */
 :root { color-scheme: dark; }
 
+/*
+   A quiet nebula instead of a flat colour, plus a faint grid, so the glass
+   panels above have something to show through them without the ground
+   itself competing for attention.
+*/
 body {
     margin: 0;
     min-height: 100vh;
     background:
-        radial-gradient(1200px 600px at 20% -10%, #14222b 0%, transparent 60%),
+        radial-gradient(1100px 560px at 14% -8%, rgba(79, 140, 247, 0.10) 0%, transparent 55%),
+        radial-gradient(900px 620px at 88% 8%, rgba(72, 197, 142, 0.06) 0%, transparent 60%),
+        radial-gradient(1400px 900px at 50% 110%, rgba(20, 34, 43, 0.9) 0%, transparent 65%),
+        linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px),
         var(--bg);
+    background-size: auto, auto, auto, 42px 42px, 42px 42px, auto;
+    background-attachment: fixed;
     color: var(--text);
     font-family: "Inter", "Segoe UI", Arial, sans-serif;
     font-size: 13px;
@@ -83,20 +108,26 @@ h3 { font-size: 15px; }
 
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: var(--surface-soft); }
-::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 5px; }
-::-webkit-scrollbar-thumb:hover { background: #456070; }
+::-webkit-scrollbar-thumb { background: linear-gradient(180deg, var(--border-strong), var(--action)); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: var(--action-bright); }
 
 /* --------------------------------------------------------------------------
    Top bar
 -------------------------------------------------------------------------- */
 
 .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 1000;
     display: flex;
     align-items: center;
     gap: 20px;
     padding: 10px 18px;
-    background: linear-gradient(180deg, #16232b 0%, #111b21 100%);
-    border-bottom: 1px solid var(--border);
+    background: var(--glass-strong);
+    backdrop-filter: blur(var(--blur)) saturate(140%);
+    -webkit-backdrop-filter: blur(var(--blur)) saturate(140%);
+    border-bottom: 1px solid var(--glass-border);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 12px 30px rgba(0, 0, 0, 0.35);
 }
 
 .brand { display: flex; align-items: center; gap: 11px; flex: 0 0 auto; }
@@ -106,14 +137,18 @@ h3 { font-size: 15px; }
     width: 36px;
     height: 36px;
     place-items: center;
-    border: 1px solid var(--border-strong);
+    overflow: hidden;
+    border: 1px solid var(--glass-border);
     border-radius: 9px;
     background: var(--surface-raised);
     color: var(--action-bright);
     font-family: var(--mono);
     font-size: 17px;
     font-weight: 700;
+    box-shadow: var(--glow-action);
 }
+
+.logo img { width: 100%; height: 100%; object-fit: cover; }
 
 .brand p, .panel-heading p, .map-toolbar p {
     margin-top: 2px;
@@ -125,6 +160,7 @@ h3 { font-size: 15px; }
 .main-nav { display: flex; gap: 3px; flex: 1 1 auto; }
 
 .nav-link {
+    position: relative;
     padding: 7px 14px;
     border: 1px solid transparent;
     border-radius: 7px;
@@ -134,14 +170,16 @@ h3 { font-size: 15px; }
     letter-spacing: 0.03em;
     text-decoration: none;
     text-transform: uppercase;
+    transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
 }
 
-.nav-link:hover { background: var(--surface-raised); color: var(--text); }
+.nav-link:hover { background: rgba(255, 255, 255, 0.05); color: var(--text); }
 
 .nav-link.active {
-    border-color: var(--border-strong);
-    background: var(--surface-raised);
+    border-color: rgba(79, 140, 247, 0.35);
+    background: var(--action-soft);
     color: var(--action-bright);
+    box-shadow: 0 0 16px rgba(79, 140, 247, 0.18) inset;
 }
 
 .mode-chip {
@@ -152,7 +190,9 @@ h3 { font-size: 15px; }
     padding: 7px 13px;
     border: 1px solid var(--border-strong);
     border-radius: 999px;
-    background: var(--surface-raised);
+    background: var(--glass);
+    backdrop-filter: blur(var(--blur));
+    -webkit-backdrop-filter: blur(var(--blur));
     color: var(--text-dim);
     font-family: var(--mono);
     font-size: 11px;
@@ -160,11 +200,12 @@ h3 { font-size: 15px; }
     letter-spacing: 0.05em;
     text-transform: uppercase;
     cursor: pointer;
+    transition: box-shadow 200ms ease, border-color 200ms ease;
 }
 
-.mode-chip.offline { border-color: rgba(242, 166, 61, 0.5); background: var(--attention-soft); color: var(--attention); }
-.mode-chip.online { border-color: rgba(72, 197, 142, 0.5); background: var(--settled-soft); color: var(--settled); }
-.mode-chip.warn { border-color: rgba(232, 57, 43, 0.55); background: var(--critical-soft); color: var(--critical); }
+.mode-chip.offline { border-color: rgba(242, 166, 61, 0.5); background: var(--attention-soft); color: var(--attention); box-shadow: var(--glow-attention); }
+.mode-chip.online { border-color: rgba(72, 197, 142, 0.5); background: var(--settled-soft); color: var(--settled); box-shadow: var(--glow-settled); }
+.mode-chip.warn { border-color: rgba(232, 57, 43, 0.55); background: var(--critical-soft); color: var(--critical); box-shadow: var(--glow-critical); }
 
 .mode-dot {
     width: 7px;
@@ -180,8 +221,10 @@ h3 { font-size: 15px; }
 
 .health-drawer {
     padding: 13px 18px;
-    background: var(--surface-soft);
-    border-bottom: 1px solid var(--border);
+    background: var(--glass);
+    backdrop-filter: blur(var(--blur));
+    -webkit-backdrop-filter: blur(var(--blur));
+    border-bottom: 1px solid var(--glass-border);
 }
 
 .health-grid {
@@ -192,10 +235,13 @@ h3 { font-size: 15px; }
 
 .health-cell {
     padding: 9px 11px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--glass-border);
     border-radius: 8px;
-    background: var(--surface);
+    background: rgba(255, 255, 255, 0.03);
+    transition: border-color 160ms ease, box-shadow 160ms ease;
 }
+
+.health-cell:has(.health-value.warn) { border-color: rgba(242, 166, 61, 0.3); box-shadow: var(--glow-attention); }
 
 .health-label {
     display: block;
@@ -231,10 +277,25 @@ h3 { font-size: 15px; }
 .page { padding: 14px; display: flex; flex-direction: column; gap: 11px; }
 
 .panel {
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--surface);
-    box-shadow: var(--shadow);
+    position: relative;
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    background: var(--glass);
+    backdrop-filter: blur(var(--blur)) saturate(130%);
+    -webkit-backdrop-filter: blur(var(--blur)) saturate(130%);
+    box-shadow: var(--shadow), 0 1px 0 rgba(255, 255, 255, 0.05) inset;
+}
+
+/* A hairline of light along the top edge, the way a glass surface catches a
+   rim light in real photography. Purely decorative. */
+.panel::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    border-radius: 12px 12px 0 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.22), transparent);
+    pointer-events: none;
 }
 
 .panel-heading { padding: 13px 15px; }
@@ -245,11 +306,16 @@ h3 { font-size: 15px; }
 .summary-card {
     position: relative;
     padding: 12px 14px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--surface);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    background: var(--glass);
+    backdrop-filter: blur(var(--blur));
+    -webkit-backdrop-filter: blur(var(--blur));
     overflow: hidden;
+    transition: transform 180ms ease, box-shadow 180ms ease;
 }
+
+.summary-card:hover { transform: translateY(-2px); }
 
 .summary-card span {
     color: var(--text-faint);
@@ -277,14 +343,17 @@ h3 { font-size: 15px; }
     background: var(--border-strong);
 }
 
-.summary-card.is-critical::before { background: var(--critical-bright); }
+.summary-card.is-critical::before { background: var(--critical-bright); box-shadow: 0 0 12px var(--critical-bright); }
 .summary-card.is-critical strong { color: var(--critical); }
-.summary-card.is-unlocated::before { background: var(--attention); }
+.summary-card.is-critical:hover { box-shadow: var(--glow-critical); }
+.summary-card.is-unlocated::before { background: var(--attention); box-shadow: 0 0 12px var(--attention); }
 .summary-card.is-unlocated strong { color: var(--attention); }
-.summary-card.is-degraded::before { background: var(--attention); }
+.summary-card.is-degraded::before { background: var(--attention); box-shadow: 0 0 12px var(--attention); }
 .summary-card.is-degraded strong { color: var(--attention); }
-.summary-card.is-done::before { background: var(--settled); }
+.summary-card.is-unlocated:hover, .summary-card.is-degraded:hover { box-shadow: var(--glow-attention); }
+.summary-card.is-done::before { background: var(--settled); box-shadow: 0 0 12px var(--settled); }
 .summary-card.is-done strong { color: var(--settled); }
+.summary-card.is-done:hover { box-shadow: var(--glow-settled); }
 
 /* Three columns: queue, map, selected report. */
 .ops-grid { display: grid; grid-template-columns: 310px minmax(0, 1fr) 350px; gap: 11px; align-items: start; }
@@ -300,11 +369,12 @@ h3 { font-size: 15px; }
 .filter-group { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 0 9px 9px; }
 
 .filter-button, .secondary-button, .text-button, .select-input, .search-input {
-    border: 1px solid var(--border-strong);
+    border: 1px solid var(--glass-border);
     border-radius: 6px;
-    background: var(--surface-soft);
+    background: rgba(255, 255, 255, 0.03);
     color: var(--text-dim);
     cursor: pointer;
+    transition: border-color 160ms ease, color 160ms ease, box-shadow 160ms ease, background 160ms ease;
 }
 
 .filter-button {
@@ -315,9 +385,9 @@ h3 { font-size: 15px; }
     text-transform: uppercase;
 }
 
-.filter-button:hover { border-color: var(--action); color: var(--text); }
+.filter-button:hover { border-color: var(--action); color: var(--text); background: var(--action-soft); }
 .filter-button.wide { grid-column: span 4; }
-.filter-button.active { border-color: var(--action); background: var(--action-soft); color: var(--action-bright); }
+.filter-button.active { border-color: var(--action); background: var(--action-soft); color: var(--action-bright); box-shadow: var(--glow-action); }
 
 .report-list { max-height: 620px; overflow-y: auto; }
 
@@ -326,11 +396,12 @@ h3 { font-size: 15px; }
     width: 100%;
     padding: 12px 13px 12px 15px;
     border: 0;
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--glass-border);
     background: transparent;
     color: var(--text);
     text-align: left;
     cursor: pointer;
+    transition: background 160ms ease;
 }
 
 .report-item::before {
@@ -339,15 +410,16 @@ h3 { font-size: 15px; }
     inset: 0 auto 0 0;
     width: 2px;
     background: transparent;
+    transition: box-shadow 160ms ease;
 }
 
-.report-item:hover { background: var(--surface-raised); }
+.report-item:hover { background: rgba(255, 255, 255, 0.04); }
 .report-item.active { background: var(--action-soft); }
-.report-item.active::before { background: var(--action); }
-.report-item.critical::before { background: var(--critical-bright); }
-.report-item.assistance::before { background: var(--attention); }
+.report-item.active::before { background: var(--action); box-shadow: 0 0 10px var(--action); }
+.report-item.critical::before { background: var(--critical-bright); box-shadow: 0 0 8px var(--critical-bright); }
+.report-item.assistance::before { background: var(--attention); box-shadow: 0 0 8px var(--attention); }
 .report-item.closed { opacity: 0.45; }
-.report-item.closed::before { background: transparent; }
+.report-item.closed::before { background: transparent; box-shadow: none; }
 
 .report-title { display: flex; align-items: flex-start; gap: 9px; }
 .report-main { flex: 1 1 auto; min-width: 0; }
@@ -517,8 +589,8 @@ h3 { font-size: 15px; }
     white-space: nowrap;
 }
 
-.map-source.offline { border-color: rgba(72, 197, 142, 0.5); background: var(--settled-soft); color: var(--settled); }
-.map-source.online { border-color: rgba(242, 166, 61, 0.5); background: var(--attention-soft); color: var(--attention); }
+.map-source.offline { border-color: rgba(72, 197, 142, 0.5); background: var(--settled-soft); color: var(--settled); box-shadow: var(--glow-settled); }
+.map-source.online { border-color: rgba(242, 166, 61, 0.5); background: var(--attention-soft); color: var(--attention); box-shadow: var(--glow-attention); }
 
 #map { width: 100%; height: 470px; background: #0e1519; }
 .network-map { width: 100%; height: 400px; background: #0e1519; border-radius: 0 0 10px 10px; }
@@ -580,13 +652,14 @@ h3 { font-size: 15px; }
     position: relative;
     width: 20px;
     height: 20px;
-    border: 2px solid rgba(255, 255, 255, 0.85);
+    border: 2px solid rgba(255, 255, 255, 0.88);
     border-radius: 50%;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+    background-image: radial-gradient(circle at 33% 28%, rgba(255, 255, 255, 0.4), transparent 55%);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55), inset 0 0 3px rgba(255, 255, 255, 0.2);
 }
 
-.map-marker.critical { background: var(--critical-bright); }
-.map-marker.assistance { background: var(--attention); }
+.map-marker.critical { background-color: var(--critical-bright); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55), inset 0 0 3px rgba(255, 255, 255, 0.2), 0 0 9px rgba(232, 57, 43, 0.5); }
+.map-marker.assistance { background-color: var(--attention); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55), inset 0 0 3px rgba(255, 255, 255, 0.2), 0 0 9px rgba(242, 166, 61, 0.45); }
 
 /*
    Three status colours on the map: red critical, amber assistance, green safe.
@@ -600,8 +673,8 @@ h3 { font-size: 15px; }
 .map-marker.safe {
     width: 13px;
     height: 13px;
-    background: var(--settled);
-    box-shadow: none;
+    background-color: var(--settled);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
 }
 
 /*
@@ -617,35 +690,43 @@ h3 { font-size: 15px; }
     width: 15px;
     height: 15px;
     border-width: 2px;
+    background-image: none;
     box-shadow: none;
 }
 
 .map-marker.critical.done {
     border-color: var(--critical-bright);
-    background: rgba(232, 57, 43, 0.16);
+    background-color: rgba(232, 57, 43, 0.16);
 }
 
 .map-marker.assistance.done {
     border-color: var(--attention);
-    background: rgba(242, 166, 61, 0.16);
+    background-color: rgba(242, 166, 61, 0.16);
 }
 
 .uav-marker, .relay-marker {
     display: grid;
     place-items: center;
-    border: 1px solid rgba(255, 255, 255, 0.75);
-    border-radius: 4px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    border-radius: 5px;
+    box-shadow: 0 3px 7px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.28);
     color: white;
     font-family: var(--mono);
     font-size: 9px;
     font-weight: 700;
+    letter-spacing: 0.02em;
 }
 
-.uav-marker { width: 34px; height: 20px; background: var(--action); }
+.uav-marker {
+    width: 34px;
+    height: 20px;
+    background: linear-gradient(160deg, var(--action-bright) 0%, var(--action) 60%, #3a6fd8 100%);
+}
 
 /* Airborne gets a halo so the aircraft reads as flying, not parked. */
-.uav-marker.airborne { box-shadow: 0 0 0 3px rgba(79, 140, 247, 0.28), 0 3px 9px rgba(0, 0, 0, 0.6); }
+.uav-marker.airborne {
+    box-shadow: 0 0 0 3px rgba(79, 140, 247, 0.22), 0 3px 9px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
 
 /* Base is a fixed reference point, styled so it never competes with a case. */
 .base-marker {
@@ -653,18 +734,20 @@ h3 { font-size: 15px; }
     place-items: center;
     width: 40px;
     height: 20px;
-    border: 1px dashed var(--text-dim);
-    border-radius: 4px;
-    background: rgba(17, 35, 42, 0.9);
+    border: 1px dashed rgba(157, 176, 186, 0.7);
+    border-radius: 5px;
+    background: linear-gradient(160deg, rgba(28, 42, 50, 0.95) 0%, rgba(14, 22, 27, 0.95) 100%);
+    box-shadow: 0 3px 7px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.05);
     color: var(--text-dim);
     font-family: var(--mono);
     font-size: 8px;
     font-weight: 700;
     letter-spacing: 0.08em;
 }
-.relay-marker { width: 40px; height: 20px; background: #2f8f68; }
-.relay-marker.relay-warn { background: #b87a1e; }
-.relay-marker.relay-down { background: var(--critical-bright); }
+
+.relay-marker { width: 40px; height: 20px; background: linear-gradient(160deg, #3fb98a 0%, #2f8f68 60%, #1f6c4d 100%); }
+.relay-marker.relay-warn { background: linear-gradient(160deg, #e0a343 0%, #b87a1e 60%, #8c5c14 100%); }
+.relay-marker.relay-down { background: linear-gradient(160deg, var(--critical) 0%, var(--critical-bright) 60%, #b52a20 100%); }
 
 .distance-tooltip {
     background: var(--action);
@@ -690,24 +773,51 @@ h3 { font-size: 15px; }
     line-height: 1.5;
 }
 
-/* Wheel-zoom hint, shown only when someone scrolls without the modifier. */
+/*
+   Wheel-zoom hint: a small floating pill, not a dimmed map. Scrolling without
+   the modifier still needs to be visible underneath, so the operator can keep
+   reading the map while learning the gesture instead of losing it for a beat.
+*/
 .map-hint {
     position: absolute;
-    inset: 0;
+    left: 50%;
+    bottom: 16px;
     z-index: 900;
-    display: grid;
-    place-items: center;
-    background: rgba(9, 14, 18, 0.55);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 14px;
+    border: 1px solid var(--glass-border);
+    border-radius: 999px;
+    background: var(--glass-strong);
+    backdrop-filter: blur(var(--blur)) saturate(140%);
+    -webkit-backdrop-filter: blur(var(--blur)) saturate(140%);
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
     color: var(--text);
-    font-size: 13px;
+    font-size: 11px;
     font-weight: 600;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 160ms ease;
+    transform: translate(-50%, 6px);
+    transition: opacity 160ms ease, transform 160ms ease;
 }
 
-.map-hint.show { opacity: 1; }
+.map-hint.show { opacity: 1; transform: translate(-50%, 0); }
+
+.map-hint-icon { flex: 0 0 auto; color: var(--action-bright); }
+
+.map-hint-key {
+    padding: 2px 6px;
+    border: 1px solid var(--glass-border);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.07);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 1px 2px rgba(0, 0, 0, 0.4);
+}
 
 .map-legend {
     position: absolute;
@@ -717,12 +827,15 @@ h3 { font-size: 15px; }
     display: flex;
     gap: 12px;
     padding: 6px 11px;
-    border: 1px solid var(--border-strong);
-    border-radius: 6px;
-    background: rgba(11, 17, 22, 0.88);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: var(--glass-strong);
+    backdrop-filter: blur(var(--blur));
+    -webkit-backdrop-filter: blur(var(--blur));
     color: var(--text-dim);
     font-size: 10px;
     pointer-events: none;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
 .map-legend span { display: flex; align-items: center; gap: 5px; }
@@ -871,16 +984,23 @@ h3 { font-size: 15px; }
     padding: 9px 14px;
     border: 1px solid var(--action);
     border-radius: 6px;
-    background: var(--action);
-    color: #071018;
+    background: linear-gradient(135deg, var(--action), #3a6fd8);
+    color: #061019;
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.05em;
     text-transform: uppercase;
     cursor: pointer;
+    transition: box-shadow 180ms ease, transform 180ms ease, background 180ms ease;
 }
 
-.primary-button:hover { background: var(--action-bright); border-color: var(--action-bright); }
+.primary-button:hover {
+    background: linear-gradient(135deg, var(--action-bright), var(--action));
+    border-color: var(--action-bright);
+    box-shadow: var(--glow-action);
+    transform: translateY(-1px);
+}
+
 .primary-button.small { padding: 7px 11px; font-size: 9px; }
 
 .secondary-button, .text-button {
@@ -891,12 +1011,12 @@ h3 { font-size: 15px; }
     text-transform: uppercase;
 }
 
-.secondary-button:hover, .text-button:hover { border-color: var(--action); color: var(--text); }
+.secondary-button:hover, .text-button:hover { border-color: var(--action); color: var(--text); box-shadow: var(--glow-action); }
 .text-button { padding: 7px 10px; font-size: 9px; white-space: nowrap; }
 
 .primary-button:disabled,
 .secondary-button:disabled,
-.text-button:disabled { cursor: not-allowed; opacity: 0.4; }
+.text-button:disabled { cursor: not-allowed; opacity: 0.4; box-shadow: none; transform: none; }
 
 /* --------------------------------------------------------------------------
    UAV panel
@@ -988,7 +1108,7 @@ td:first-child { font-family: var(--mono); }
 .search-input { flex: 1 1 auto; padding: 8px 11px; color: var(--text); font-size: 12px; cursor: text; }
 .search-input::placeholder { color: var(--text-faint); }
 .select-input { padding: 8px 11px; color: var(--text); font-size: 12px; }
-.search-input:focus, .select-input:focus { outline: 1px solid var(--action); border-color: var(--action); }
+.search-input:focus, .select-input:focus { outline: 1px solid var(--action); border-color: var(--action); box-shadow: var(--glow-action); }
 
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; padding: 0 15px 16px; }
 
@@ -1019,8 +1139,9 @@ td:first-child { font-family: var(--mono); }
     display: grid;
     place-items: center;
     padding: 20px;
-    background: rgba(4, 8, 11, 0.7);
-    backdrop-filter: blur(2px);
+    background: rgba(4, 8, 11, 0.6);
+    backdrop-filter: blur(6px) saturate(120%);
+    -webkit-backdrop-filter: blur(6px) saturate(120%);
 }
 
 .modal {
@@ -1028,10 +1149,12 @@ td:first-child { font-family: var(--mono); }
     max-height: 90vh;
     overflow-y: auto;
     padding: 20px;
-    border: 1px solid var(--border-strong);
-    border-radius: 10px;
-    background: var(--surface);
-    box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6);
+    border: 1px solid var(--glass-border);
+    border-radius: 14px;
+    background: var(--glass-strong);
+    backdrop-filter: blur(var(--blur)) saturate(140%);
+    -webkit-backdrop-filter: blur(var(--blur)) saturate(140%);
+    box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04) inset, var(--glow-action);
 }
 
 .modal h3 { font-size: 14px; letter-spacing: 0.04em; text-transform: uppercase; }
@@ -1068,11 +1191,13 @@ td:first-child { font-family: var(--mono); }
     z-index: 3000;
     max-width: 340px;
     padding: 11px 14px;
-    border: 1px solid var(--border-strong);
-    border-radius: 7px;
-    background: var(--surface-raised);
+    border: 1px solid var(--glass-border);
+    border-radius: 9px;
+    background: var(--glass-strong);
+    backdrop-filter: blur(var(--blur)) saturate(140%);
+    -webkit-backdrop-filter: blur(var(--blur)) saturate(140%);
     color: var(--text);
-    box-shadow: var(--shadow);
+    box-shadow: var(--shadow), var(--glow-action);
     font-size: 11px;
     line-height: 1.55;
     opacity: 0;

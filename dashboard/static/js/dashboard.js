@@ -15,6 +15,7 @@ let accuracyCircles = [];
 let uavMarker = null;
 let targetMarker = null;
 let targetLine = null;
+let targetLineGlow = null;
 let baseMarker = null;
 
 // Latest aircraft state, kept so the case actions can describe what closing a
@@ -966,7 +967,7 @@ async function uavAction(url) {
 
 
 function drawUavLayers(uav) {
-    [uavMarker, targetMarker, targetLine, baseMarker].forEach((layer) => {
+    [uavMarker, targetMarker, targetLine, targetLineGlow, baseMarker].forEach((layer) => {
         if (layer) {
             layer.remove();
         }
@@ -975,6 +976,7 @@ function drawUavLayers(uav) {
     uavMarker = null;
     targetMarker = null;
     targetLine = null;
+    targetLineGlow = null;
     baseMarker = null;
 
     // Base is always drawn, whether the aircraft is out or not. It is the
@@ -1030,18 +1032,28 @@ function drawUavLayers(uav) {
     if (!returning) {
         targetMarker = L.circleMarker(
             [uav.target_latitude, uav.target_longitude],
-            { radius: 11, color: legColour, weight: 2, fillOpacity: 0 }
+            { radius: 11, color: legColour, weight: 2.5, fillColor: legColour, fillOpacity: 0.08 }
         ).addTo(map);
     }
 
     // The line is the straight-line bearing from aircraft to destination, not
-    // a flight path. It is dashed so it does not read as a planned route.
+    // a flight path. It is dashed so it does not read as a planned route. A
+    // wider, low-opacity line underneath gives it a soft glow without a CSS
+    // filter, which Leaflet's SVG renderer handles more predictably.
+    targetLineGlow = L.polyline(
+        [
+            [uav.current_latitude, uav.current_longitude],
+            [uav.target_latitude, uav.target_longitude]
+        ],
+        { color: legColour, weight: 7, opacity: 0.14, interactive: false }
+    ).addTo(map);
+
     targetLine = L.polyline(
         [
             [uav.current_latitude, uav.current_longitude],
             [uav.target_latitude, uav.target_longitude]
         ],
-        { color: legColour, weight: 2, dashArray: "7 6", opacity: 0.85 }
+        { color: legColour, weight: 2.5, dashArray: "6 6", lineCap: "round", opacity: 0.95 }
     ).addTo(map);
 
     targetLine.bindTooltip(

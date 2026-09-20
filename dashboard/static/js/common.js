@@ -375,9 +375,20 @@ function drawPilotArea(map, area) {
 function bindWheelZoom(map) {
     const container = map.getContainer();
 
+    // Cmd, not Ctrl, is the zoom modifier on a Mac keyboard. The hint should
+    // name the key that is actually under the operator's thumb.
+    const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
+    const modifierLabel = isMac ? "⌘ Cmd" : "Ctrl";
+
     const hint = document.createElement("div");
     hint.className = "map-hint";
-    hint.textContent = "Hold Ctrl and scroll to zoom";
+    hint.innerHTML =
+        '<svg class="map-hint-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" ' +
+        'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+        '<rect x="6" y="3" width="12" height="18" rx="6"></rect>' +
+        '<line x1="12" y1="7" x2="12" y2="11"></line>' +
+        '</svg>' +
+        `<span><kbd class="map-hint-key">${modifierLabel}</kbd> + scroll to zoom</span>`;
     container.appendChild(hint);
 
     let hintTimer = null;

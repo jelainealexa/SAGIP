@@ -16,6 +16,12 @@ instance/
 *.sqlite
 *.db
 
+# Backend runtime data. Each machine builds its own from live packets, and
+# four people committing these would conflict on every pull.
+backend/survivors.json
+backend/drone_readings.json
+backend/*.json.tmp
+
 # Editor and OS clutter
 .vscode/
 .idea/

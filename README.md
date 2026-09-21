@@ -6,15 +6,12 @@ Post-Earthquake Emergency Response.
 Undergraduate thesis prototype, BS Computer Engineering, Polytechnic
 University of the Philippines.
 
-Members: Dayrit, Maigue, Malagiona, Villahermosa
-Adviser: Dr. Ado
-
 ---
 
 ## What is in this repository
 
 ```
-dashboard/          Flask command dashboard (Maigue)
+dashboard/          Flask command dashboard
   app.py            backend, API, response lifecycle, priority scoring
   templates/        base, operations, records, network pages
   static/css/       style.css plus the bundled Leaflet stylesheet
@@ -22,7 +19,6 @@ dashboard/          Flask command dashboard (Maigue)
   static/tiles/     offline map tiles for the pilot test area
 tools/
   download_tiles.py fetches the offline tile pack
-requirements.txt    Python dependencies
 ```
 
 Firmware, the mobile app, and hardware files are not in here yet. Add them as
@@ -31,10 +27,6 @@ sibling folders when they exist.
 ---
 
 ## Running the dashboard
-
-Every member sets this up once on their own machine. The virtual environment
-is deliberately not in the repository, because it is large and specific to one
-operating system.
 
 **Windows**
 
@@ -46,18 +38,6 @@ venv\Scripts\activate
 pip install -r requirements.txt
 cd dashboard
 python app.py
-```
-
-**macOS or Linux**
-
-```
-git clone https://github.com/<owner>/<repo>.git
-cd <repo>
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cd dashboard
-python3 app.py
 ```
 
 Then open http://127.0.0.1:5000 in a browser.
@@ -110,26 +90,11 @@ git commit -m "Add relay heartbeat fields to network page"
 git push
 ```
 
-**Stay in your own area where you can.** The dashboard is Maigue's. Firmware,
-mobile and hardware get their own folders. Two people editing `app.py` on the
-same afternoon is where conflicts come from.
+**Stay in your own area where you can.** Firmware, mobile and hardware get
+their own folders.
 
 **If a push is rejected**, somebody else pushed first. Run `git pull`, fix any
 conflict markers, then push again. Do not force push.
 
 **Never commit the `venv` folder.** `.gitignore` already excludes it. If it
 somehow appears in `git status`, stop and ask before committing.
-
----
-
-## The API schema is a contract
-
-`dashboard/app.py` defines the fields the dashboard expects: `emergency_id`,
-`device_id`, `reported_status`, `requested_assistance`, `position_source`,
-`communication_path`, `hop_count`, and the relay heartbeat fields.
-
-The phone app and the relay firmware have to produce exactly these. Write them
-down in `docs/api-schema.md` and have everyone confirm each field is one they
-can actually measure. A field the firmware cannot produce is a field that has
-to come out of the dashboard, and finding that out during integration week is
-expensive.

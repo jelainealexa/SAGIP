@@ -251,7 +251,7 @@ function renderQueue() {
         button.className = classes.join(" ");
 
         const locationNote = report.is_located
-            ? escapeHTML(report.zone)
+            ? escapeHTML(report.zone || "Zone not available")
             : '<span class="flag-unlocated">No location</span>';
 
         // The dot on an unacknowledged critical row raises the alarm, matching
@@ -634,10 +634,13 @@ function showReport(report, moveMap = true) {
     statusElement.className = "tag " + statusClass(report.reported_status);
 
     document.getElementById("selected-device").textContent = report.device_id;
-    document.getElementById("selected-zone").textContent = report.zone;
+    document.getElementById("selected-zone").textContent =
+        report.zone || "Not available";
 
     document.getElementById("selected-path").textContent =
-        PATH_LABEL[report.communication_path] || report.communication_path;
+        PATH_LABEL[report.communication_path] ||
+        report.communication_path ||
+        "Not available";
 
     document.getElementById("selected-position").textContent =
         positionText(report);

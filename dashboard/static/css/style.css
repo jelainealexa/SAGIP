@@ -560,6 +560,7 @@ h3 { font-size: 15px; }
 .relay-ok { border-color: rgba(72, 197, 142, 0.5); color: var(--settled); }
 .relay-warn { border-color: rgba(242, 166, 61, 0.5); background: var(--attention-soft); color: var(--attention); }
 .relay-down { border-color: rgba(232, 57, 43, 0.5); background: var(--critical-soft); color: var(--critical); }
+.relay-unknown { border-color: var(--border-strong); color: var(--text-faint); }
 
 /* --------------------------------------------------------------------------
    Map
@@ -742,6 +743,7 @@ h3 { font-size: 15px; }
 .relay-marker { width: 40px; height: 20px; background: linear-gradient(160deg, #3fb98a 0%, #2f8f68 60%, #1f6c4d 100%); }
 .relay-marker.relay-warn { background: linear-gradient(160deg, #e0a343 0%, #b87a1e 60%, #8c5c14 100%); }
 .relay-marker.relay-down { background: linear-gradient(160deg, var(--critical) 0%, var(--critical-bright) 60%, #b52a20 100%); }
+.relay-marker.relay-unknown { background: linear-gradient(160deg, #8a97a0 0%, #66727a 60%, #4d565c 100%); }
 
 .distance-tooltip {
     background: var(--action);

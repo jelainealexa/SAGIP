@@ -119,7 +119,11 @@ function renderTable() {
 
             <td>${escapeHTML(assistanceText(record.requested_assistance))}</td>
             <td>${position}</td>
-            <td>${escapeHTML(PATH_LABEL[record.communication_path] || record.communication_path)}</td>
+            <td>${escapeHTML(
+                PATH_LABEL[record.communication_path] ||
+                record.communication_path ||
+                "Not available"
+            )}</td>
 
             <td>
                 <span class="state-chip state-${record.response_status.toLowerCase()}">
@@ -189,7 +193,11 @@ function showDetail(emergencyId) {
                 .map(
                     (item) =>
                         `<p class="priority-row">${escapeHTML(item.factor)}: ` +
-                        `${escapeHTML(item.detail)} (+${item.points})</p>`
+                        `${escapeHTML(
+                            item.detail === null || item.detail === undefined
+                                ? "not reported"
+                                : item.detail
+                        )} (+${item.points})</p>`
                 )
                 .join("");
     }

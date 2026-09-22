@@ -178,6 +178,10 @@ function positionText(report) {
         return POSITION_LABEL.NONE;
     }
 
+    if (report.position_accuracy_m === null || report.position_accuracy_m === undefined) {
+        return `${POSITION_LABEL[report.position_source]} (uncertainty not available)`;
+    }
+
     return (
         `${POSITION_LABEL[report.position_source]}, ` +
         `+/- ${report.position_accuracy_m} m`
@@ -446,7 +450,17 @@ function healthIsGood(key, value, health) {
     }
 
     if (key === "ble_relays") {
+        if (health.relay_detail.state === "NOT_AVAILABLE") {
+            // No relay telemetry yet, which is a gap in the data, not a
+            // fault to warn about.
+            return null;
+        }
+
         return health.relay_detail.reachable === health.relay_detail.total;
+    }
+
+    if (key === "lora_network" && value === "NOT_AVAILABLE") {
+        return null;
     }
 
     return GOOD_VALUES.includes(String(value));

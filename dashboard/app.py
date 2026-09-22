@@ -1,10 +1,22 @@
 """SAGIP command dashboard backend.
 
-Development stage: the records in build_sample_reports() are mock data used so
-frontend work does not depend on unfinished hardware. Replace those builders
-with database or API input once the mobile app and relay firmware can deliver
-real reports. The field names below are the proposed API schema, so any change
-here must be agreed with the members handling the phone app and relay firmware.
+Reports, priority scores and estimated locations are pulled live from the
+hardware-facing backend (backend/app.py, port 5001) via the functions in the
+"Hardware backend connection" section below. What still has no counterpart on
+that backend is kept as local, in-memory state or mock data, and is flagged
+where it appears:
+
+  - The response lifecycle (RECEIVED -> ... -> RESOLVED/NO_ACTION) and the
+    ground-responder flag are operator workflow state the backend has no
+    concept of, so the dashboard tracks them itself, keyed by survivor id
+    (see _lifecycle below).
+  - Relay telemetry (battery, RSSI, SNR, packet counts) and the UAV's
+    richer mission sub-states (ASSIGNED/EN_ROUTE/ON_STATION/RETURNING,
+    payload contents, GNSS/link status) have no backend source yet and stay
+    mock data. See backend/README.md, "Open items for the team".
+  - Actually triggering the backend's real MAVLink dispatch (which arms and
+    flies the aircraft) is intentionally not wired to the "Dispatch UAV"
+    button yet; that is a separate, higher-stakes change.
 
 Terminology note: records are "emergency reports", not "survivors". The system
 receives a report from a device. It does not confirm that a person is present,
@@ -16,12 +28,64 @@ import os
 
 from datetime import datetime, timedelta, timezone
 
+import requests
+
 from flask import Flask, jsonify, render_template, request
 
 
 app = Flask(__name__)
 
 PH_TZ = timezone(timedelta(hours=8))
+
+
+# ---------------------------------------------------------------------------
+# Hardware backend connection
+#
+# backend/app.py runs as a separate process on port 5001 and is the only
+# thing that talks to the ESP32 base station and the drone. This dashboard
+# calls it over HTTP rather than importing it, so the two can be started,
+# restarted and deployed independently, exactly as the READMEs describe.
+# ---------------------------------------------------------------------------
+
+BACKEND_URL = os.environ.get("SAGIP_BACKEND_URL", "http://127.0.0.1:5001")
+BACKEND_TIMEOUT_S = 3
+
+
+class BackendUnavailable(Exception):
+    """Raised when backend/app.py (port 5001) cannot be reached."""
+
+
+def backend_get(path, params=None):
+    try:
+        response = requests.get(
+            f"{BACKEND_URL}{path}", params=params, timeout=BACKEND_TIMEOUT_S
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as error:
+        raise BackendUnavailable(
+            f"Could not reach the hardware backend at {BACKEND_URL}{path}: {error}"
+        ) from error
+
+
+@app.errorhandler(BackendUnavailable)
+def handle_backend_unavailable(error):
+    return jsonify({"message": str(error)}), 502
+
+
+# The backend's status vocabulary (backend/priority.py) is six values, aimed
+# at keeping the LoRa payload small. The dashboard's is three. This mapping is
+# a provisional bridge, not a firmware decision, and it should be revisited
+# with whoever owns the phone app and relay firmware: see backend/README.md,
+# "Open items for the team: Status vocabulary".
+BACKEND_STATUS_TO_REPORTED = {
+    "CRITICAL SOS": "CRITICAL",
+    "MEDICAL": "CRITICAL",
+    "UNCONFIRMED": "ASSISTANCE",
+    "NEED ASSISTANCE": "ASSISTANCE",
+    "EVACUATING": "ASSISTANCE",
+    "SAFE": "SAFE"
+}
 
 
 # ---------------------------------------------------------------------------
@@ -260,99 +324,21 @@ def routing(report):
 # ---------------------------------------------------------------------------
 # Priority scoring
 #
-# These weights are provisional. They are collected here, as named constants,
-# so that they can be shown, defended, and adjusted as a single table rather
-# than hidden inside the scoring function. Before the defense the group must be
-# able to state why each weight has the value it has.
+# The score itself is now computed by the hardware backend (backend/priority.py)
+# and arrives on every survivor from GET /survivors, breakdown included. The
+# dashboard used to keep its own, differently-weighted copy of this logic; that
+# was dropped rather than kept as a second, disagreeing scoring engine. The
+# backend's weights are provisional in the same sense the old ones were, and
+# any change to them is backend/priority.py's concern, not this file's.
 #
 # The score orders the queue. It is deliberately not shown as a number on the
 # main dashboard, because a precise-looking figure invites the reader to treat
 # it as a measurement. It is available in full, with its breakdown, on the
 # record page and through the API, which is what the evaluation for RQ2 needs.
-#
-# The score expresses reported urgency and waiting time. It does not express a
-# medical assessment. A report marked CRITICAL is a user-reported urgency.
 # ---------------------------------------------------------------------------
-
-WEIGHT_STATUS = {
-    "CRITICAL": 50,
-    "ASSISTANCE": 25,
-    "SAFE": 0
-}
-
-WEIGHT_ASSISTANCE = {
-    "TRAPPED": 15,
-    "MEDICAL": 15,
-    "EXTRACTION": 10,
-    "WATER": 5,
-    "FOOD": 3,
-    "SHELTER": 3
-}
-
-AGE_POINTS_PER_10_MIN = 1
-AGE_POINTS_MAX = 15
-
-LOW_BATTERY_THRESHOLD_PCT = 20
-WEIGHT_LOW_BATTERY = 8
 
 # Position accuracy worse than this is called out before a UAV is dispatched.
 POOR_ACCURACY_M = 30
-
-
-def compute_priority(report, now):
-    """Return the priority score and a breakdown of how it was produced."""
-
-    breakdown = []
-    score = 0
-
-    status_points = WEIGHT_STATUS.get(report["reported_status"], 0)
-    score += status_points
-    breakdown.append({
-        "factor": "Reported status",
-        "detail": report["reported_status"],
-        "points": status_points
-    })
-
-    if report["reported_status"] == "SAFE":
-        return 0, breakdown
-
-    assistance_points = 0
-    for code in report.get("requested_assistance", []):
-        assistance_points += WEIGHT_ASSISTANCE.get(code, 0)
-
-    if assistance_points:
-        score += assistance_points
-        breakdown.append({
-            "factor": "Requested assistance",
-            "detail": ", ".join(report["requested_assistance"]),
-            "points": assistance_points
-        })
-
-    age_minutes = report_age_minutes(report, now)
-    age_points = min(
-        (age_minutes // 10) * AGE_POINTS_PER_10_MIN,
-        AGE_POINTS_MAX
-    )
-
-    if age_points:
-        score += age_points
-        breakdown.append({
-            "factor": "Waiting time",
-            "detail": f"{age_minutes} minutes",
-            "points": age_points
-        })
-
-    battery = report.get("device_battery_pct")
-
-    if battery is not None and battery <= LOW_BATTERY_THRESHOLD_PCT:
-        score += WEIGHT_LOW_BATTERY
-        breakdown.append({
-            "factor": "Device battery low",
-            "detail": f"{battery}%",
-            "points": WEIGHT_LOW_BATTERY
-        })
-
-    return score, breakdown
 
 
 def report_age_minutes(report, now):
@@ -462,281 +448,146 @@ def dispatch_warnings(report):
 
 
 # ---------------------------------------------------------------------------
-# Mock data
+# Reports: live from the backend, with locally-tracked workflow state
+#
+# A "report" record is a merge of two things that come from different places:
+#
+#   - What was reported (status, requested assistance, battery, estimated
+#     location, priority) comes fresh from the backend's GET /survivors on
+#     every request. It is never stored here.
+#   - What the operator has done about it (the response lifecycle, the
+#     ground-responder flag) has no backend counterpart, so it is kept here,
+#     keyed by survivor id, and survives across requests for as long as this
+#     process runs (see "State is in memory" in the top-level README).
 # ---------------------------------------------------------------------------
 
-def build_sample_reports():
-    now = datetime.now(PH_TZ)
+_lifecycle = {}
 
-    def minutes_ago(minutes):
-        return (now - timedelta(minutes=minutes)).isoformat()
 
-    return [
-        {
-            "emergency_id": "SGP-001",
-            "device_id": "BLE-7A3C",
-            "reported_status": "CRITICAL",
-            "requested_assistance": ["TRAPPED"],
+def _lifecycle_for(survivor_id, reported_status):
+    """The operator-workflow state for one survivor id, created on first sight.
+
+    A SAFE check-in never enters the response lifecycle (see the
+    RESPONSE_STATES documentation above); everything else starts at RECEIVED.
+    """
+
+    state = _lifecycle.get(survivor_id)
+
+    if state is None:
+        initial = "NO_ACTION" if reported_status == "SAFE" else "RECEIVED"
+
+        state = {
+            "response_status": initial,
+            "responder_status": "NONE",
+            "responder_requested_at": None,
+            "history": [{
+                "at": datetime.now(PH_TZ).isoformat(),
+                "state": initial,
+                "by": "system"
+            }]
+        }
+
+        _lifecycle[survivor_id] = state
+
+    return state
+
+
+def fetch_reports():
+    """Every survivor from the backend, reshaped into a report record and
+    merged with its locally-tracked lifecycle state.
+
+    Raises BackendUnavailable if backend/app.py cannot be reached.
+    """
+
+    survivors = backend_get("/survivors")
+
+    records = []
+
+    for survivor in survivors:
+        reported_status = BACKEND_STATUS_TO_REPORTED.get(
+            survivor.get("status"), "ASSISTANCE"
+        )
+
+        state = _lifecycle_for(survivor["id"], reported_status)
+        location = survivor.get("estimated_location")
+
+        records.append({
+            "emergency_id": survivor["id"],
+            # The backend has no separate device identifier from the
+            # survivor id, so the two are the same value here.
+            "device_id": survivor["id"],
+            "reported_status": reported_status,
+            "requested_assistance": survivor.get("assistance") or [],
             "note": None,
-            "received_at": minutes_ago(2),
-            "latitude": None,
-            "longitude": None,
-            "position_source": "NONE",
+            "address": survivor.get("address"),
+            "received_at": survivor.get("last_seen") or survivor.get("timestamp"),
+            "latitude": location["lat"] if location else None,
+            "longitude": location["lon"] if location else None,
+            "position_source": "RELAY_ESTIMATE" if location else "NONE",
+            # Not available: the backend reports a reading count, not a
+            # position uncertainty in metres.
             "position_accuracy_m": None,
-            "communication_path": "BLE_LORA_2HOP",
-            "hop_count": 2,
-            "via_relay": "R-02",
-            "device_battery_pct": 18,
-            "zone": "Zone A",
-            "response_status": "RECEIVED",
-            "history": [
-                {"at": minutes_ago(2), "state": "RECEIVED", "by": "system"}
-            ]
-        },
-        {
-            "emergency_id": "SGP-002",
-            "device_id": "BLE-2F91",
-            "reported_status": "ASSISTANCE",
-            "requested_assistance": ["WATER", "FOOD"],
-            "note": None,
-            "received_at": minutes_ago(5),
-            "latitude": 14.45680,
-            "longitude": 120.98810,
-            "position_source": "RELAY_ESTIMATE",
-            "position_accuracy_m": 45,
-            "communication_path": "BLE_LORA_1HOP",
-            "hop_count": 1,
-            "via_relay": "R-03",
-            "device_battery_pct": 45,
-            "zone": "Zone B",
-            "response_status": "RECEIVED",
-            "history": [
-                {"at": minutes_ago(5), "state": "RECEIVED", "by": "system"}
-            ]
-        },
-        {
-            "emergency_id": "SGP-003",
-            "device_id": "CEL-8821",
-            "reported_status": "SAFE",
-            "requested_assistance": [],
-            "note": "Household of four accounted for.",
-            "received_at": minutes_ago(1),
-            "latitude": 14.45370,
-            "longitude": 120.98230,
-            "position_source": "PHONE_GNSS",
-            "position_accuracy_m": 8,
-            "communication_path": "CELLULAR",
-            "hop_count": 0,
-            "via_relay": None,
-            "device_battery_pct": 67,
-            "zone": "Zone D",
-            "response_status": "NO_ACTION",
-            "history": [
-                {"at": minutes_ago(1), "state": "RECEIVED", "by": "system"},
-                {"at": minutes_ago(1), "state": "NO_ACTION", "by": "operator"}
-            ]
-        },
-        {
-            "emergency_id": "SGP-004",
-            "device_id": "CEL-4410",
-            "reported_status": "CRITICAL",
-            "requested_assistance": ["MEDICAL", "WATER"],
-            "note": "Reported injury to a family member.",
-            "received_at": minutes_ago(42),
-            "latitude": 14.45585,
-            "longitude": 120.98495,
-            "position_source": "PHONE_GNSS",
-            "position_accuracy_m": 11,
-            "communication_path": "CELLULAR",
-            "hop_count": 0,
-            "via_relay": None,
-            "device_battery_pct": 69,
-            "zone": "Zone D",
-            "response_status": "ACKNOWLEDGED",
-            "history": [
-                {"at": minutes_ago(42), "state": "RECEIVED", "by": "system"},
-                {"at": minutes_ago(39), "state": "ACKNOWLEDGED",
-                 "by": "operator"}
-            ]
-        },
-        {
-            "emergency_id": "SGP-005",
-            "device_id": "BLE-C107",
-            "reported_status": "CRITICAL",
-            "requested_assistance": ["TRAPPED", "WATER"],
-            "note": None,
-            "received_at": minutes_ago(2),
-            "latitude": 14.45595,
-            "longitude": 120.98220,
-            "position_source": "RELAY_ESTIMATE",
-            "position_accuracy_m": 60,
-            "communication_path": "BLE_LORA_3HOP",
-            "hop_count": 3,
-            "via_relay": "R-04",
-            "device_battery_pct": 5,
-            "zone": "Zone A",
-            "response_status": "RECEIVED",
-            "history": [
-                {"at": minutes_ago(2), "state": "RECEIVED", "by": "system"}
-            ]
-        },
-        {
-            "emergency_id": "SGP-006",
-            "device_id": "BLE-93B2",
-            "reported_status": "ASSISTANCE",
-            "requested_assistance": ["FOOD", "SHELTER"],
-            "note": None,
-            "received_at": minutes_ago(25),
-            "latitude": 14.45380,
-            "longitude": 120.98599,
-            "position_source": "RELAY_ESTIMATE",
-            "position_accuracy_m": 52,
-            "communication_path": "BLE_LORA_1HOP",
-            "hop_count": 1,
-            "via_relay": "R-03",
-            "device_battery_pct": 40,
-            "zone": "Zone B",
-            "response_status": "ACKNOWLEDGED",
-            "history": [
-                {"at": minutes_ago(25), "state": "RECEIVED", "by": "system"},
-                {"at": minutes_ago(22), "state": "ACKNOWLEDGED",
-                 "by": "operator"}
-            ]
-        },
-        {
-            "emergency_id": "SGP-007",
-            "device_id": "CEL-1120",
-            "reported_status": "SAFE",
-            "requested_assistance": [],
-            "note": "No assistance needed.",
-            "received_at": minutes_ago(1),
-            "latitude": 14.45320,
-            "longitude": 120.98850,
-            "position_source": "PHONE_GNSS",
-            "position_accuracy_m": 6,
-            "communication_path": "CELLULAR",
-            "hop_count": 0,
-            "via_relay": None,
-            "device_battery_pct": 90,
-            "zone": "Zone D",
-            "response_status": "NO_ACTION",
-            "history": [
-                {"at": minutes_ago(1), "state": "RECEIVED", "by": "system"},
-                {"at": minutes_ago(1), "state": "NO_ACTION", "by": "operator"}
-            ]
-        },
-        {
-            "emergency_id": "SGP-008",
-            "device_id": "CEL-6633",
-            "reported_status": "ASSISTANCE",
-            "requested_assistance": ["WATER"],
-            "note": "Water supply cut since the event.",
-            "received_at": minutes_ago(52),
-            "latitude": 14.45305,
-            "longitude": 120.98395,
-            "position_source": "PHONE_GNSS",
-            "position_accuracy_m": 14,
-            "communication_path": "CELLULAR",
-            "hop_count": 0,
-            "via_relay": None,
-            "device_battery_pct": 29,
-            "zone": "Zone D",
-            "response_status": "RESPONDED",
-            "history": [
-                {"at": minutes_ago(52), "state": "RECEIVED", "by": "system"},
-                {"at": minutes_ago(50), "state": "ACKNOWLEDGED",
-                 "by": "operator"},
-                {"at": minutes_ago(45), "state": "ASSIGNED", "by": "operator"},
-                {"at": minutes_ago(44), "state": "EN_ROUTE", "by": "operator"},
-                {"at": minutes_ago(36), "state": "RESPONDED", "by": "operator"}
-            ]
-        }
-    ]
+            # Not available: the backend does not record the communication
+            # path, hop count or a named zone per report.
+            "communication_path": None,
+            "hop_count": None,
+            "zone": None,
+            "via_relay": survivor.get("relay_id"),
+            "device_battery_pct": survivor.get("battery"),
+            "priority_score": survivor.get("priority", 0),
+            "priority_breakdown": survivor.get("priority_breakdown", []),
+            "response_status": state["response_status"],
+            "responder_status": state["responder_status"],
+            "responder_requested_at": state["responder_requested_at"],
+            "history": state["history"]
+        })
+
+    return records
 
 
-def build_relays():
-    now = datetime.now(PH_TZ)
+# ---------------------------------------------------------------------------
+# Relay sites
+#
+# Where relay hardware is sited is a placement fact the team decides, like
+# BASE_STATION and PILOT_AREA below, not sensor telemetry, so it can be shown
+# without any hardware attached. These four coordinates were carried over
+# from this file's earlier mock data and have NOT been confirmed as a real
+# survey; replace them with the team's actual (or planned) site coordinates.
+#
+# Per-relay telemetry (battery, RSSI, SNR, packets forwarded, online/offline)
+# is a different thing: the backend only ever sees a relay_id string on a
+# packet, never a heartbeat from the relay itself, so there is nowhere to get
+# it from yet. Every relay below carries "UNKNOWN"/None for those fields
+# rather than an invented number; see backend/README.md, "No relay telemetry".
+# ---------------------------------------------------------------------------
 
-    def seconds_ago(seconds):
-        return (now - timedelta(seconds=seconds)).isoformat()
+RELAY_SITES = [
+    {"relay_id": "R-01", "label": "Relay 01", "site": "Covered court roof",
+     "latitude": 14.45905, "longitude": 120.98310},
+    {"relay_id": "R-02", "label": "Relay 02", "site": "Barangay hall mast",
+     "latitude": 14.45640, "longitude": 120.98130},
+    {"relay_id": "R-03", "label": "Relay 03", "site": "School water tank",
+     "latitude": 14.45455, "longitude": 120.98720},
+    {"relay_id": "R-04", "label": "Relay 04", "site": "Perimeter pole, east",
+     "latitude": 14.46020, "longitude": 120.98780}
+]
 
-    return [
-        {
-            "relay_id": "R-01",
-            "label": "Relay 01",
-            "site": "Covered court roof",
-            "latitude": 14.45905,
-            "longitude": 120.98310,
-            "status": "ONLINE",
-            "battery_pct": 88,
-            "solar_charging": True,
-            "last_heartbeat": seconds_ago(12),
-            "uplink_rssi_dbm": -84,
-            "uplink_snr_db": 9.5,
-            "hops_to_base": 1,
-            "packets_forwarded": 412,
-            "duplicates_suppressed": 63
-        },
-        {
-            "relay_id": "R-02",
-            "label": "Relay 02",
-            "site": "Barangay hall mast",
-            "latitude": 14.45640,
-            "longitude": 120.98130,
-            "status": "ONLINE",
-            "battery_pct": 71,
-            "solar_charging": True,
-            "last_heartbeat": seconds_ago(31),
-            "uplink_rssi_dbm": -97,
-            "uplink_snr_db": 5.1,
-            "hops_to_base": 2,
-            "packets_forwarded": 288,
-            "duplicates_suppressed": 44
-        },
-        {
-            "relay_id": "R-03",
-            "label": "Relay 03",
-            "site": "School water tank",
-            "latitude": 14.45455,
-            "longitude": 120.98720,
-            "status": "DEGRADED",
-            "battery_pct": 23,
-            "solar_charging": False,
-            "last_heartbeat": seconds_ago(210),
-            "uplink_rssi_dbm": -108,
-            "uplink_snr_db": -2.4,
-            "hops_to_base": 2,
-            "packets_forwarded": 174,
-            "duplicates_suppressed": 21
-        },
-        {
-            "relay_id": "R-04",
-            "label": "Relay 04",
-            "site": "Perimeter pole, east",
-            "latitude": 14.46020,
-            "longitude": 120.98780,
-            "status": "OFFLINE",
-            "battery_pct": None,
-            "solar_charging": False,
-            "last_heartbeat": seconds_ago(1870),
-            "uplink_rssi_dbm": None,
-            "uplink_snr_db": None,
-            "hops_to_base": None,
-            "packets_forwarded": 96,
-            "duplicates_suppressed": 11
-        }
-    ]
+relays = [
+    {
+        **site,
+        "status": "UNKNOWN",
+        "battery_pct": None,
+        "solar_charging": None,
+        "last_heartbeat": None,
+        "uplink_rssi_dbm": None,
+        "uplink_snr_db": None,
+        "hops_to_base": None,
+        "packets_forwarded": None,
+        "duplicates_suppressed": None
+    }
+    for site in RELAY_SITES
+]
 
-
-reports = build_sample_reports()
-
-# A ground responder is tracked separately from the UAV, because a case can
-# need one, the other, or both. Keeping them on separate fields means marking
-# a payload delivered never implies a person attended.
-for _report in reports:
-    _report.setdefault("responder_status", "NONE")
-    _report.setdefault("responder_requested_at", None)
-relays = build_relays()
 activity_log = []
 
 
@@ -795,8 +646,7 @@ uav = {
 
 
 comms = {
-    "cellular_uplink": "DOWN",
-    "base_station_link": "UP"
+    "cellular_uplink": "DOWN"
 }
 
 
@@ -851,12 +701,10 @@ def serialize_reports():
     now = datetime.now(PH_TZ)
     output = []
 
-    for report in reports:
-        score, breakdown = compute_priority(report, now)
-
+    for report in fetch_reports():
+        # priority_score and priority_breakdown are already on the report,
+        # computed by the backend.
         record = dict(report)
-        record["priority_score"] = score
-        record["priority_breakdown"] = breakdown
         record["age_minutes"] = report_age_minutes(report, now)
         record["is_open"] = report["response_status"] in OPEN_STATES
         record["is_located"] = report["latitude"] is not None
@@ -920,10 +768,19 @@ def summary_counts(records):
 
 
 def relay_health():
-    reachable = sum(1 for relay in relays if relay["status"] == "ONLINE")
-    degraded = sum(1 for relay in relays if relay["status"] == "DEGRADED")
+    # Sites can be known (see RELAY_SITES above) while their status is still
+    # UNKNOWN, since no relay reports a heartbeat to the backend today. That
+    # is "not available", not "every relay is reachable" or "every relay is
+    # down" -- neither of which this dashboard can actually claim yet.
+    known = [relay for relay in relays if relay["status"] != "UNKNOWN"]
 
-    if reachable == len(relays):
+    if not known:
+        return {"state": "NOT_AVAILABLE", "reachable": 0, "degraded": 0, "total": len(relays)}
+
+    reachable = sum(1 for relay in known if relay["status"] == "ONLINE")
+    degraded = sum(1 for relay in known if relay["status"] == "DEGRADED")
+
+    if reachable == len(known):
         state = "OPERATIONAL"
     elif reachable + degraded == 0:
         state = "DOWN"
@@ -942,13 +799,19 @@ def system_health():
     health = relay_health()
     tiles = tile_pack_status()
 
+    try:
+        base_station_up = bool(backend_get("/health").get("serial_connected"))
+    except BackendUnavailable:
+        base_station_up = False
+
     return {
         "cellular_uplink": comms["cellular_uplink"],
-        "base_station": (
-            "OPERATIONAL" if comms["base_station_link"] == "UP" else "DOWN"
-        ),
+        "base_station": "OPERATIONAL" if base_station_up else "DOWN",
         "lora_network": health["state"],
-        "ble_relays": f"{health['reachable']}/{health['total']} reachable",
+        "ble_relays": (
+            "Not available" if health["state"] == "NOT_AVAILABLE"
+            else f"{health['reachable']}/{health['total']} reachable"
+        ),
         "relay_detail": health,
         "offline_map": "AVAILABLE" if tiles["available"] else "NOT AVAILABLE",
         "uav_link": uav["link"],
@@ -961,28 +824,36 @@ def system_health():
 
 def find_report(emergency_id):
     return next(
-        (item for item in reports if item["emergency_id"] == emergency_id),
+        (item for item in fetch_reports() if item["emergency_id"] == emergency_id),
         None
     )
 
 
 def apply_transition(report, action, by="operator"):
-    """Move a report to the next state if the action is allowed from here."""
+    """Move a report to the next state if the action is allowed from here.
 
+    Writes go to _lifecycle, the persistent store, not to `report` itself:
+    `report` is a fresh dict built by fetch_reports() on every call and is
+    discarded as soon as this request finishes.
+    """
+
+    state = _lifecycle[report["emergency_id"]]
     allowed_from, target = TRANSITIONS[action]
 
-    if report["response_status"] not in allowed_from:
+    if state["response_status"] not in allowed_from:
         return False, (
             f"Cannot {action.replace('_', ' ')} a report that is "
-            f"{report['response_status'].replace('_', ' ').lower()}."
+            f"{state['response_status'].replace('_', ' ').lower()}."
         )
 
-    report["response_status"] = target
-    report["history"].append({
+    state["response_status"] = target
+    state["history"].append({
         "at": datetime.now(PH_TZ).isoformat(),
         "state": target,
         "by": by
     })
+
+    report["response_status"] = target
 
     return True, None
 
@@ -1088,7 +959,17 @@ def get_uav():
 
 @app.route("/api/relays", methods=["GET"])
 def get_relays():
-    return jsonify({"relays": relays, "health": relay_health()})
+    response = {"relays": relays, "health": relay_health()}
+
+    if relay_health()["state"] == "NOT_AVAILABLE":
+        response["note"] = (
+            "Sites shown are where relay hardware is planned to be "
+            "installed. Live telemetry (battery, RSSI, SNR, packet counts, "
+            "online/offline) is not reported by the backend yet, so those "
+            "columns read \"--\" until that data is available."
+        )
+
+    return jsonify(response)
 
 
 @app.route("/api/system", methods=["GET"])
@@ -1429,11 +1310,12 @@ def request_responder():
             "message": "A responder has already been requested for this report."
         }), 409
 
-    report["responder_status"] = "REQUESTED"
-    report["responder_requested_at"] = datetime.now(PH_TZ).isoformat()
+    state = _lifecycle[report["emergency_id"]]
+    state["responder_status"] = "REQUESTED"
+    state["responder_requested_at"] = datetime.now(PH_TZ).isoformat()
 
-    report["history"].append({
-        "at": report["responder_requested_at"],
+    state["history"].append({
+        "at": state["responder_requested_at"],
         "state": "RESPONDER_REQUESTED",
         "by": "operator"
     })
@@ -1499,8 +1381,9 @@ def reopen():
     if report["response_status"] not in ("RESOLVED", "NO_ACTION"):
         return jsonify({"message": "That report is not closed."}), 409
 
-    report["response_status"] = "ACKNOWLEDGED"
-    report["history"].append({
+    state = _lifecycle[report["emergency_id"]]
+    state["response_status"] = "ACKNOWLEDGED"
+    state["history"].append({
         "at": datetime.now(PH_TZ).isoformat(),
         "state": "ACKNOWLEDGED",
         "by": "operator (reopened)"
@@ -1531,8 +1414,9 @@ def cancel_mission():
     if report is not None and report["response_status"] in (
         "ASSIGNED", "EN_ROUTE"
     ):
-        report["response_status"] = "ACKNOWLEDGED"
-        report["history"].append({
+        state = _lifecycle[report["emergency_id"]]
+        state["response_status"] = "ACKNOWLEDGED"
+        state["history"].append({
             "at": datetime.now(PH_TZ).isoformat(),
             "state": "ACKNOWLEDGED",
             "by": "operator (mission cancelled)"

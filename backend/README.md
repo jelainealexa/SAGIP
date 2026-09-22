@@ -473,8 +473,26 @@ and is a methodology decision for the group.
 - **Release command.** The ESP32 firmware must act on `RELEASE|<id>` lines.
 - **APM firmware support.** Bench-test that your ArduCopter version on the
   APM 2.8 accepts `SET_POSITION_TARGET_GLOBAL_INT` in GUIDED mode.
-- **Dashboard wiring.** The dashboard pages still use their own mock
-  `/api/*` endpoints and do not call this backend yet.
+- **Dashboard wiring.** `dashboard/app.py`'s `/api/reports` now calls this
+  backend's `GET /survivors` live (see `fetch_reports()`), so reported
+  status, priority and estimated location are real. Still not wired: the
+  dashboard's "Dispatch UAV" button does not call this backend's
+  `POST /dispatch`, so it does not arm or fly the aircraft yet, and the
+  relay-telemetry and UAV-mission-substate panels stay on mock data because
+  this backend has no data source for them (see below).
 - **Status vocabulary.** The dashboard uses CRITICAL / ASSISTANCE / SAFE; this
-  backend uses the six statuses above. The short forms are accepted, but the
-  two should be aligned.
+  backend uses the six statuses above. `BACKEND_STATUS_TO_REPORTED` in
+  `dashboard/app.py` is a provisional many-to-one mapping bridging the two;
+  the two vocabularies themselves still need to be aligned with whoever owns
+  the phone app and relay firmware.
+- **No relay telemetry.** `GET /survivors` carries a `relay_id` per reading
+  but nothing else about a relay (battery, RSSI, SNR, uptime). The
+  dashboard's Network page has nowhere to get this from until either the
+  relay firmware reports its own heartbeat or the base station protocol is
+  extended to carry it.
+- **No UAV mission sub-states.** `mavlink_ctrl.py` and `GET /dispatch` only
+  expose `IDLE/CONNECTING/LAUNCHING/EN_ROUTE/FAILED`. The dashboard's mock
+  UAV panel has additional states (`ASSIGNED`, `ON_STATION`, `RETURNING`),
+  a payload list, battery, GNSS and link status with no equivalent here;
+  wiring the panel for real means either simplifying it to match what this
+  backend can report, or extending the backend to track more of the flight.

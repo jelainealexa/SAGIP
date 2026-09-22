@@ -3,7 +3,8 @@
 const RELAY_STATE_CLASS = {
     ONLINE: "ok",
     DEGRADED: "warn",
-    OFFLINE: "down"
+    OFFLINE: "down",
+    UNKNOWN: "unknown"
 };
 
 let relayMap;
@@ -27,6 +28,13 @@ async function refreshRelays() {
         renderSummary(data);
         renderTable(data.relays);
         renderRelayMap(data.relays);
+
+        const note = document.getElementById("relay-note");
+
+        if (note) {
+            note.textContent = data.note || "";
+            note.classList.toggle("hidden", !data.note);
+        }
     } catch (error) {
         showNotification(`Unable to load relay status: ${error.message}`);
     }
@@ -46,7 +54,7 @@ function renderSummary(data) {
         relays.filter((r) => r.status === "OFFLINE").length;
 
     document.getElementById("relay-packets").textContent =
-        relays.reduce((total, r) => total + r.packets_forwarded, 0);
+        relays.reduce((total, r) => total + (r.packets_forwarded || 0), 0);
 }
 
 
@@ -81,9 +89,13 @@ function renderTable(relays) {
                     <td class="mono">${escapeHTML(orDash(relay.uplink_rssi_dbm, " dBm"))}</td>
                     <td class="mono">${escapeHTML(orDash(relay.uplink_snr_db, " dB"))}</td>
                     <td>${escapeHTML(orDash(relay.hops_to_base))}</td>
-                    <td>${relay.packets_forwarded}</td>
-                    <td>${relay.duplicates_suppressed}</td>
-                    <td>${escapeHTML(relativeTime(relay.last_heartbeat))}</td>
+                    <td>${escapeHTML(orDash(relay.packets_forwarded))}</td>
+                    <td>${escapeHTML(orDash(relay.duplicates_suppressed))}</td>
+                    <td>${escapeHTML(
+                        relay.last_heartbeat
+                            ? relativeTime(relay.last_heartbeat)
+                            : "Never"
+                    )}</td>
                 </tr>
             `;
         })

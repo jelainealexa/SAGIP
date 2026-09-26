@@ -82,8 +82,19 @@ def scored_survivors():
 
 
 def drone_start_position(body):
-    """Where the drone is now: live MAVLink position, else the position in the
-    request, else the drone position from the most recent reading."""
+    """Where the drone is now: live MAVLink position, else the position given
+    in the request.
+
+    There used to be a third fallback here that took the position from the most
+    recent reading. That was correct while readings carried the drone's own
+    position. They now carry the position of the relay that heard the device,
+    so the fallback would have answered "where is the drone" with the location
+    of a relay on a wall, and route planning would have started from the wrong
+    point without reporting any error.
+
+    Returning None is the honest answer. The caller turns it into a 409 telling
+    the operator to supply a position.
+    """
 
     position = mavlink_ctrl.get_drone_position()
     if position is not None:
@@ -91,11 +102,6 @@ def drone_start_position(body):
 
     if "drone_lat" in body and "drone_lon" in body:
         return parse_coordinates(body["drone_lat"], body["drone_lon"])
-
-    readings = storage.get_readings()
-    for reading in reversed(readings):
-        if reading["drone_lat"] or reading["drone_lon"]:
-            return reading["drone_lat"], reading["drone_lon"]
 
     return None
 

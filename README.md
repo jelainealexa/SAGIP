@@ -91,8 +91,13 @@ Delete both to start from empty.
 `STATUS_NAMES` in `priority.py` (0 = CRITICAL SOS ... 5 = SAFE):
 
 ```
-SOS|[ID]|[STATUS_CODE]|[BATTERY]|[RELAY_ID]|[DRONE_LAT]|[DRONE_LON]|[ALTITUDE]|[RSSI]
+SOS|[ID]|[STATUS_CODE]|[BATTERY]|[RELAY_ID]|[NODE_LAT]|[NODE_LON]|[NODE_ALT]|[RSSI]
 ```
+
+`NODE_LAT`, `NODE_LON` and `NODE_ALT` are the surveyed position of the relay
+named in `RELAY_ID`, and `RSSI` is the BLE strength that relay measured from
+the phone. They are set once by the relay that heard the device and are never
+changed by a forwarding hop.
 
 **Drone link.** Connect Mission Planner to the drone, then open the MAVLink
 Mirror (Ctrl+F, "Mavlink"), choose UDP Client, port 14550, and tick

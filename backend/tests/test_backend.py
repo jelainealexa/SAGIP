@@ -45,15 +45,26 @@ for bad in ["SOS|x|0|12", "HELLO|a|0|1|R|1|1|1|1", "SOS||0|1|R|1|1|1|1", "SOS|a|
     except ValueError:
         check(f"reject {bad!r}", True)
 
-# Weighted centroid
+# Weighted centroid.
+# Weight is linear power, 10 ** (rssi / 10), so a -59 dBm reading outweighs a
+# -119 dBm one by a factor of a million and the estimate sits essentially on
+# the strong node. Under the old 1 / (abs(rssi) + 1) weighting the same pair
+# differed by less than 2x and the estimate landed near their midpoint.
 est = algorithm.weighted_centroid([
-    {"drone_lat": 10.0, "drone_lon": 20.0, "rssi": -59},
-    {"drone_lat": 11.0, "drone_lon": 21.0, "rssi": -119},
-    {"drone_lat": 0, "drone_lon": 0, "rssi": -10},
+    {"relay_id": "R-01", "node_lat": 10.0, "node_lon": 20.0, "rssi": -59},
+    {"relay_id": "R-02", "node_lat": 11.0, "node_lon": 21.0, "rssi": -119},
+    {"relay_id": "R-03", "node_lat": 0, "node_lon": 0, "rssi": -10},
 ])
-expected = (10 / 60 + 11 / 120) / (1 / 60 + 1 / 120)
+w1, w2 = 10 ** (-59 / 10), 10 ** (-119 / 10)
+expected = (10.0 * w1 + 11.0 * w2) / (w1 + w2)
 check("weighted centroid formula", abs(est["lat"] - expected) < 1e-6, est)
-check("skips readings without GPS fix", est["reading_count"] == 2, est)
+check("skips readings with no node position", est["reading_count"] == 2, est)
+check("counts distinct relays", est["node_count"] == 2, est)
+
+# The strong reading must dominate. This is the property the old formula did
+# not have, and the reason the estimate used to collapse to the geometric
+# centre of whichever relays happened to hear the device.
+check("strong reading dominates", abs(est["lat"] - 10.0) < 0.001, est)
 
 # Priority thresholds
 check("battery points", [priority.battery_points(b) for b in (14.9, 15, 29.9, 30, 50, 50.1)] == [40, 25, 25, 15, 15, 0])
@@ -94,7 +105,15 @@ survivors = client.get("/survivors").json
 check("GET /survivors sorted by priority", survivors[0]["id"] == "SGP-001", survivors)
 check("relay packet keeps phone address", survivors[0].get("address") == "Blk 1")
 check("GET /estimated-locations", len(client.get("/estimated-locations").json) == 2)
-check("GET /route", len(client.get("/route").json["waypoints"]) == 2)
+
+# /route needs to know where the drone is starting from. With no MAVLink
+# connection in a test, that has to be supplied. It used to be inferred from
+# the last reading, which is no longer valid: readings now carry the position
+# of the relay that heard the device, and a relay bolted to a wall is not the
+# drone.
+check("GET /route without a drone position", client.get("/route").status_code == 409)
+route = client.get("/route", query_string={"drone_lat": 14.4570, "drone_lon": 120.9850}).json
+check("GET /route", len(route["waypoints"]) == 2, route)
 check("POST /dispatch needs a location", client.post("/dispatch", json={"survivor_id": "NONE"}).status_code == 409)
 check("POST /dispatch rejects bad coordinates", client.post("/dispatch", json={"lat": 95, "lon": 0}).status_code == 400)
 check("POST /release without ESP32 returns 503", client.post("/release", json={}).status_code == 503)

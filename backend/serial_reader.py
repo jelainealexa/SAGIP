@@ -2,7 +2,18 @@
 
 The ESP32 forwards every packet it hears as one line:
 
-    SOS|[ID]|[STATUS_CODE]|[BATTERY]|[RELAY_ID]|[DRONE_LAT]|[DRONE_LON]|[ALTITUDE]|[RSSI]\\n
+    SOS|[ID]|[STATUS_CODE]|[BATTERY]|[RELAY_ID]|[NODE_LAT]|[NODE_LON]|[NODE_ALT]|[RSSI]\\n
+
+NODE_LAT, NODE_LON and NODE_ALT are the surveyed position of the relay named
+in RELAY_ID, and RSSI is the BLE signal strength that relay measured from the
+phone. They are written once by the relay that heard the device and are never
+altered by a forwarding hop: a relay that rebroadcasts a packet changes only
+the hop counter.
+
+This matters more than it looks. If a forwarding relay overwrote RSSI with the
+LoRa strength it just measured, the value would describe the previous relay
+rather than the phone, and the position the backend produces would be silently
+wrong rather than obviously broken.
 
 Each line becomes one reading in drone_readings.json, and the survivor's
 latest status, battery and last_seen are updated in survivors.json.
@@ -58,9 +69,9 @@ def parse_packet(line):
         "status": status_from_code(status_code),
         "battery": float(battery),
         "relay_id": relay_id,
-        "drone_lat": float(lat),
-        "drone_lon": float(lon),
-        "altitude": float(alt),
+        "node_lat": float(lat),
+        "node_lon": float(lon),
+        "node_alt": float(alt),
         "rssi": float(rssi),
         "received_at": now_iso()
     }
@@ -180,5 +191,6 @@ class SerialReader(threading.Thread):
                       reading["survivor_id"], error)
             return
 
-        log.info("SOS %s rssi=%s at (%s, %s)", reading["survivor_id"],
-                 reading["rssi"], reading["drone_lat"], reading["drone_lon"])
+        log.info("SOS %s heard by %s rssi=%s at (%s, %s)",
+                 reading["survivor_id"], reading["relay_id"],
+                 reading["rssi"], reading["node_lat"], reading["node_lon"])

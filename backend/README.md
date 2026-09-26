@@ -36,13 +36,13 @@ call it from the browser.
 |---|---|---|
 | REST API | `app.py` | SOS intake, survivor list, location estimates, route, dispatch, payload release, health |
 | Serial telemetry reader | `serial_reader.py` | Background thread that reads the ESP32 base station, reconnects if unplugged |
-| RSSI weighted centroid | `algorithm.py` | Estimates each survivor's position from the drone positions where it was heard |
+| RSSI weighted centroid | `algorithm.py` | Estimates each survivor's position from the surveyed relay positions where it was heard |
 | Priority scoring engine | `priority.py` | Scores status, battery, signal age and RSSI depth, with a per-factor breakdown |
 | Greedy route planner | `routing.py` | Highest priority first, then nearest unvisited survivor scoring above 40 |
 | Drone dispatch | `mavlink_ctrl.py` | pymavlink over MAVLink 1.0 for the APM 2.8: GUIDED, arm, take off to 20 m, fly to target |
 | JSON file storage | `storage.py` | Thread-safe, crash-safe `survivors.json` and `drone_readings.json` |
 | Automated tests | `tests/` | API/algorithm tests and a fake-drone MAVLink test |
-| Packet simulator | `tools/simulate_packets.py` | Fake base station traffic for demos without hardware |
+| Packet simulator | `tools/simulate_packets.py` | Fake relay traffic for demos without hardware |
 
 ---
 
@@ -190,7 +190,7 @@ All bodies are JSON. Errors return `{"message": "..."}` with a 4xx/5xx status.
 
 ### GET /route
 
-Optional query `?drone_lat=..&drone_lon=..` when the drone position is not
+Query `?drone_lat=..&drone_lon=..` is required when the live drone position is not
 known from MAVLink or recent readings.
 
 ```json
@@ -230,10 +230,25 @@ launching returns `409`.
 The ESP32 sends one line per packet:
 
 ```
-SOS|[ID]|[STATUS_CODE]|[BATTERY]|[RELAY_ID]|[DRONE_LAT]|[DRONE_LON]|[ALTITUDE]|[RSSI]\n
+SOS|[ID]|[STATUS_CODE]|[BATTERY]|[RELAY_ID]|[NODE_LAT]|[NODE_LON]|[NODE_ALT]|[RSSI]\n
 ```
 
-Example: `SOS|SGP-001|0|12|R2|14.457000|120.985000|20.0|-95`
+Example: `SOS|SGP-001|0|12|R-02|14.457000|120.985000|3.0|-72`
+
+`NODE_LAT`, `NODE_LON` and `NODE_ALT` are the surveyed position of the relay
+named in `RELAY_ID`, and `RSSI` is the BLE signal strength that relay measured
+from the phone.
+
+Those four fields are written once, by the relay that heard the device, and
+are never altered afterwards. A relay forwarding someone else's packet changes
+only the hop counter. If a forwarding relay overwrote `RSSI` with the LoRa
+strength it just measured, the value would describe the previous relay instead
+of the phone, and every position the backend produced would be quietly wrong
+rather than visibly broken.
+
+The relays are the sensors here, not the drone. A drone measuring a LoRa
+packet is measuring the relay that transmitted it, so drone-side RSSI carries
+no information about where a survivor is.
 
 `STATUS_CODE` is the index into `STATUS_NAMES` in `priority.py`:
 
@@ -264,19 +279,41 @@ the backend.
 
 ## RSSI weighted centroid localisation
 
-`algorithm.py` places a survivor at the weighted average of the drone
+`algorithm.py` places a survivor at the weighted average of the surveyed relay
 positions where its signal was heard:
 
 ```
-weight        = 1 / (abs(RSSI) + 1)
+weight        = 10 ** (RSSI / 10)
 estimated_lat = sum(lat * weight) / sum(weight)
 estimated_lon = sum(lon * weight) / sum(weight)
 ```
 
-Readings at (0, 0) are skipped, since that is what the drone reports before
-it has a GPS fix. Survivors with no usable readings have no estimate.
+Readings with no usable node position, recorded as (0, 0), are skipped.
+Survivors with no usable readings have no estimate.
 
-See [Simulation results](#simulation-results) for how accurate this formula is.
+Relay positions are surveyed once at installation with a tape from a fixed
+benchmark. They are accurate to well under a metre and they do not drift, so
+the relays need no GPS. A GPS module on each relay would report 2 to 3 m of
+error forever and cost roughly ₱1,000 per node to make the reference worse.
+
+`node_count` in the estimate is how many distinct relays contributed. It
+decides what the estimate is worth, and the dashboard should say so rather
+than presenting every estimate with equal confidence:
+
+| Relays heard | Honest reading |
+|---|---|
+| 3 or more | a coordinate, with an error figure |
+| 2 | narrowed to a line between two zones |
+| 1 | proximity only, "near relay 3" |
+| 0 | no detection |
+
+A weighted centroid can never place a survivor outside the convex hull of the
+relays that heard them, so accuracy degrades as the geometry worsens and a
+device outside the relay square cannot be located well however clean the RSSI
+is. That is a property of the method and belongs in the limitations, not
+something to be tuned away.
+
+See [Simulation results](#simulation-results) for measured accuracy.
 
 ---
 
@@ -321,8 +358,15 @@ can be wrong after an outage. Missing battery or RSSI scores 0 for that factor.
    **above 40**.
 
 Distances are great-circle (haversine) metres. The drone's start position
-comes from, in order: live MAVLink position, `drone_lat`/`drone_lon` in the
-request, or the drone position in the most recent reading.
+comes from, in order: live MAVLink position, then `drone_lat`/`drone_lon` in
+the request. If neither is available the endpoint returns 409 rather than
+guessing.
+
+There used to be a third fallback that took the position from the most recent
+reading. That was correct while readings carried the drone's own position.
+They now carry the position of a relay, so the fallback would have answered
+"where is the drone" with the location of a box bolted to a wall, and planned
+a route from there without reporting anything wrong.
 
 ---
 
@@ -376,7 +420,7 @@ byte `0xFD`. `mavlink_ctrl.py` instead:
 | File | Contents |
 |---|---|
 | `survivors.json` | One record per survivor: `id`, `status`, `battery`, `address`, `household_size`, `assistance`, `timestamp`, `last_seen`, `relay_id`, `source` |
-| `drone_readings.json` | One record per base station packet: `survivor_id`, `status`, `battery`, `relay_id`, `drone_lat`, `drone_lon`, `altitude`, `rssi`, `received_at` |
+| `drone_readings.json` | One record per base station packet: `survivor_id`, `status`, `battery`, `relay_id`, `node_lat`, `node_lon`, `node_alt`, `rssi`, `received_at` |
 
 - All access goes through one lock, since the API and serial thread both write.
 - Writes go to a `.tmp` file which is then swapped in, so a crash cannot leave
@@ -443,31 +487,58 @@ with a safety pilot on the RC transmitter.
 
 ## Simulation results
 
-`tools/simulate_packets.py` flies a virtual drone in a 9 × 9 grid (about
-440 m square, 55 m spacing) at 20 m over three survivors. RSSI comes from a
+`tools/simulate_packets.py` places four relays in a square about 110 m on a
+side and has each hear three survivors eight times over BLE. RSSI comes from a
 log-distance path loss model (−40 dBm at 1 m, exponent 2.7, 3 dB noise,
-−115 dBm sensitivity). Result with `--seed 1`:
+−95 dBm sensitivity). Result with `--seed 1`:
 
-| Survivor | Position | Error, specified formula `1/(abs(RSSI)+1)` | Error, linear power `10^(RSSI/10)` |
-|---|---|---|---|
-| SIM-001 | grid centre | 3.3 m | 4.2 m |
-| SIM-002 | off-centre | **197.5 m** | 12.1 m |
-| SIM-003 | off-centre | **192.2 m** | 21.2 m |
+| Survivor | Position | Relays heard | Error | Usable as |
+|---|---|---|---|---|
+| SIM-001 | inside the square | 4 | 15.8 m | coordinate |
+| SIM-002 | near the edge | 3 | 20.5 m | coordinate |
+| SIM-003 | well outside | 1 | 123.8 m | proximity only |
 
-The specified weight changes very little across the RSSI range (−60 dBm
-weighs only about 1.7 times more than −100 dBm), so every estimate lands near
-the centre of the flight grid. SIM-001 only looks accurate because it sits
-there. Weighting by linear received power, `10^(RSSI/10)`, brings off-centre
-errors down to 12–21 m in the same simulation. The code still uses the
-specified formula; changing it is a one-line edit in `weighted_centroid()`
-and is a methodology decision for the group.
+SIM-003 is placed outside the relay square deliberately. A centroid cannot
+report a position outside the hull of the nodes that heard the device, so the
+large error is the method being honest about geometry it cannot resolve. The
+right output there is "near relay 3", not a coordinate, which is what
+`node_count` is for.
+
+Treat these figures as a check that the maths behaves, not as a predicted
+field accuracy. Everything depends on the path loss exponent and the BLE
+sensitivity, and both have to be measured in the real environment before any
+error figure means anything.
+
+### Why the weighting changed
+
+The original weight was `1 / (abs(RSSI) + 1)`. It produces 0.0164 at −60 dBm
+and 0.0090 at −110 dBm, under a 2x spread across the entire usable range, so
+every node ends up weighted almost equally and the estimate collapses to the
+plain geometric centre of whichever nodes heard the device. Signal strength
+stops affecting the answer.
+
+An earlier drone-grid simulation measured the effect directly: off-centre
+survivors landed 192 to 198 m out under that formula against 12 to 21 m under
+linear power, and the one survivor that looked accurate only did so because it
+happened to sit at the centre of the grid.
+
+`10 ** (RSSI / 10)` converts dBm back to linear power, the quantity that
+actually falls off with distance, spanning about five orders of magnitude over
+the same range.
 
 ---
 
 ## Open items for the team
 
-- **Localisation weighting.** Decide between the specified formula and
-  linear power weighting (see above), or report the comparison as a finding.
+- **Localisation weighting.** Settled: linear power, `10 ** (RSSI / 10)`.
+  The comparison against the original formula is worth reporting as a finding
+  rather than discarding, since it is a measured result.
+- **Relay survey.** Every relay position in the node table must be measured
+  with a tape from a fixed benchmark, not read off a phone GPS. Ground truth
+  at ±3 m makes a 15 m error figure meaningless.
+- **Path loss calibration.** Measure the exponent in the real environment,
+  open air and through concrete separately, before quoting any accuracy
+  number. The simulator's 2.7 is a placeholder.
 - **Status code order.** The relay and phone firmware must send
   `STATUS_CODE` in the order in the table above.
 - **Release command.** The ESP32 firmware must act on `RELEASE|<id>` lines.

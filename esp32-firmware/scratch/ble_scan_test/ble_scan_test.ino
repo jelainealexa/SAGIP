@@ -15,6 +15,8 @@
  *   nRF Connect for Mobile -> Advertiser -> add record ->
  *   Complete Local Name -> S|7A3C|0|18
  *
+* Built against ESP32 Arduino core 3.x.
+ *
  * Board settings for the ESP32-C3 bench board:
  *   Board: ESP32C3 Dev Module
  *   USB CDC On Boot: Enabled     <- without this, Serial prints nothing
@@ -162,10 +164,12 @@ void setup() {
 }
 
 void loop() {
-  BLEScanResults found = pBLEScan->start(BLE_SCAN_SEC, false);
+  // ESP32 Arduino core 3.x returns a pointer here. Core 2.x returned the
+  // object by value, so older examples use BLEScanResults and found.getCount().
+  BLEScanResults *found = pBLEScan->start(BLE_SCAN_SEC, false);
 
   Serial.print("scan complete, devices in range: ");
-  Serial.print(found.getCount());
+  Serial.print(found->getCount());
   Serial.print(", SAGIP reports heard so far: ");
   Serial.println(heard);
 

@@ -1,67 +1,43 @@
 # SAGIP packet format
 
-The contract between the Android app, the relay firmware, and the dashboard
-backend. Every member parses or builds these strings, so nobody changes this
-file alone. Change it here first, tell the others, then change code.
+The contract between the Android app, the relay firmware, the base station and
+the backend. Every member parses or builds these strings, so nobody changes
+this file alone. Change it here first, tell the others, then change code.
 
-Enum values and their numeric indices come from `dashboard/app.py`. That file
-is the source of truth for the vocabularies. If an enum changes there, it
-changes here in the same commit.
+`backend/priority.py` is the source of truth for the status vocabulary and
+`backend/serial_reader.py` for the serial line. If either changes, this file
+changes in the same commit.
 
 ---
 
-## Why the numbers instead of the words
+## Why numbers instead of words
 
 A BLE advertisement carries 31 bytes in total, and the Complete Local Name
-field eats into that. LoRa airtime grows with payload length, and at SF9 a
-long packet occupies the channel long enough to collide with another relay
+field eats into that. LoRa airtime grows with payload length, and at SF9 a long
+packet occupies the channel long enough to collide with another relay
 rebroadcasting the same report.
 
-So the radio path sends the index of the enum, not its text. The dashboard
-expands the index back into readable text. `app.py` already documents this.
+So the radio path sends the index of the status, not its text. The backend
+expands it through `status_from_code()`.
 
 ---
 
-## Vocabularies
+## Status codes
 
-### reported_status
+Index into `STATUS_NAMES` in `backend/priority.py`.
 
-| Index | Value |
+| Code | Status |
 |---|---|
-| 0 | CRITICAL |
-| 1 | ASSISTANCE |
-| 2 | SAFE |
-
-### requested_assistance
-
-| Index | Value |
-|---|---|
-| 0 | TRAPPED |
+| 0 | CRITICAL SOS |
 | 1 | MEDICAL |
-| 2 | WATER |
-| 3 | FOOD |
-| 4 | EXTRACTION |
-| 5 | SHELTER |
+| 2 | UNCONFIRMED |
+| 3 | NEED ASSISTANCE |
+| 4 | EVACUATING |
+| 5 | SAFE |
 
-Several codes are sent as concatenated digits with no separator. `23` means
-WATER and FOOD. A single `-` means nothing was requested.
-
-### communication_path
-
-Not transmitted. The backend derives it from `hop`:
-
-| hop | communication_path |
-|---|---|
-| (cellular ingest) | CELLULAR |
-| 1 | BLE_LORA_1HOP |
-| 2 | BLE_LORA_2HOP |
-| 3 | BLE_LORA_3HOP |
-
-### position_source
-
-Not transmitted on the fallback path. The backend sets `RELAY_ESTIMATE` when
-it produces a coordinate from relay measurements, and `NONE` when it cannot.
-`PHONE_GNSS` only ever arrives over the cellular path.
+The dashboard uses a shorter three-value vocabulary and maps onto this one
+through `BACKEND_STATUS_TO_REPORTED` in `dashboard/app.py`. That mapping is
+marked provisional in the code. Firmware follows the six-value list above.
 
 ---
 
@@ -70,21 +46,19 @@ it produces a coordinate from relay measurements, and `NONE` when it cannot.
 Sent by the Android app in the Complete Local Name field.
 
 ```
-S|<devID>|<status>|<request>|<battery>
+S|<devID>|<status>|<battery>
 ```
 
 | Field | Format | Example |
 |---|---|---|
-| `S` | literal, marks a SAGIP distress advertisement | `S` |
-| devID | 4 hex chars, last 4 of the BLE address or a registered ID | `7A3C` |
-| status | one digit, reported_status index | `0` |
-| request | assistance digits concatenated, or `-` | `23` |
+| `S` | literal, marks a SAGIP advertisement | `S` |
+| devID | 4 to 6 chars, last of the BLE address or a registered ID | `7A3C` |
+| status | one digit, status code above | `0` |
 | battery | phone battery percent, 0 to 100 | `18` |
 
-Example: `S|7A3C|0|0|18`
+Example: `S|7A3C|0|18`
 
-Length: 13 to 18 characters. Inside the 31-byte advertisement limit with room
-to spare.
+11 to 13 characters, comfortably inside the 31-byte limit.
 
 **Relay behaviour:** ignore any advertisement whose name does not begin with
 `S|`. Do not attempt to parse anything else on the air.
@@ -97,126 +71,152 @@ much lower and roughly halves usable range.
 ## 2. LoRa report, relay to relay to base station
 
 ```
-R|<pktID>|<hop>|<devID>|<status>|<request>|<battery>|<origin>|<bleRSSI>
+SOS|<pktID>|<hop>|<devID>|<status>|<battery>|<relayID>|<lat>|<lon>|<alt>|<rssi>
 ```
 
 | Field | Format | Example |
 |---|---|---|
-| `R` | literal, marks a report | `R` |
-| pktID | 6 chars, relay ID plus a rolling counter, unique | `R2A31C` |
+| `SOS` | literal | `SOS` |
+| pktID | 6 chars, relay ID plus rolling counter, unique | `R2A31C` |
 | hop | 1 on first transmission, incremented on each rebroadcast | `1` |
 | devID | copied from the advertisement | `7A3C` |
 | status | copied | `0` |
-| request | copied | `0` |
 | battery | copied | `18` |
-| origin | the relay that heard the phone, never the one forwarding | `R-02` |
-| bleRSSI | the BLE RSSI that origin measured, dBm, negative | `-67` |
+| relayID | the relay that heard the phone | `R-02` |
+| lat | that relay's surveyed latitude | `14.457000` |
+| lon | that relay's surveyed longitude | `120.985000` |
+| alt | that relay's mounting height in metres | `3.0` |
+| rssi | the BLE RSSI that relay measured, dBm, negative | `-72` |
 
-Example: `R|R2A31C|1|7A3C|0|0|18|R-02|-67`
+Example: `SOS|R2A31C|1|7A3C|0|18|R-02|14.457000|120.985000|3.0|-72`
 
-Length: about 32 characters.
+### The fields that must never be overwritten
 
-### The two fields that must never be overwritten
+`relayID`, `lat`, `lon`, `alt` and `rssi` are set once, by the relay that heard
+the phone, and carry the entire localization signal. A forwarding relay
+increments `hop` and changes nothing else.
 
-`origin` and `bleRSSI` carry the entire localization signal. They are set once,
-by the relay that heard the phone, and every later hop leaves them untouched.
+If a forwarding relay overwrote `rssi` with the LoRa strength it just measured,
+the value would describe the previous relay rather than the phone, and every
+coordinate the backend produced would be quietly wrong rather than visibly
+broken.
 
-A forwarding relay increments `hop` and changes nothing else.
+### Surveyed position, not GPS
 
-If a relay overwrites `bleRSSI` with the LoRa RSSI it just measured, the
-coordinate the backend produces is the position of the previous relay, not the
-phone. That is silent and it invalidates the results.
+Each relay's coordinates are compiled into its firmware, or stored in flash,
+from a tape measurement taken at installation against a fixed benchmark. That
+is accurate to well under a metre and does not drift. A GPS module on each
+relay would report 2 to 3 m of error forever and cost about ₱1,000 per node to
+make the reference worse.
 
----
-
-## 3. Heartbeat, relay to base station
-
-Sent every 30 to 60 seconds. Stagger the offsets so the relays do not all
-transmit on the same second.
-
-```
-H|<relayID>|<battV>|<uptimeS>|<fwdCount>|<tilt>
-```
-
-| Field | Format | Example |
-|---|---|---|
-| relayID | node identity | `R-02` |
-| battV | cell voltage, two decimals | `3.87` |
-| uptimeS | seconds since boot | `14322` |
-| fwdCount | packets forwarded since boot | `47` |
-| tilt | `OK`, `TILT`, or `JOLT` | `OK` |
-
-Example: `H|R-02|3.87|14322|47|OK`
-
-The backend marks a relay offline after three missed heartbeats.
+If a relay is moved after installation, its stored coordinate is wrong and the
+system has no way to know. That is a real limitation, and the beacon in
+section 5 is how it gets detected.
 
 ---
 
-## 4. Beacon, relay to relay
+## 3. Serial line, base station to backend
 
-Sent on its own interval so every other relay can measure the RSSI it arrives
-at. This is the position trust check.
-
-```
-B|<relayID>|<seq>
-```
-
-Example: `B|R-02|118`
-
-Beacons are never rebroadcast. A relay that hears one records the RSSI and
-stops.
-
----
-
-## 5. Neighbour RSSI report, relay to base station
-
-What a relay heard from each of its neighbours since the last report.
+The base station strips `pktID` and `hop` and prints nine fields, which is
+exactly what `backend/serial_reader.py` parses.
 
 ```
-N|<relayID>|<peer>:<rssi>,<peer>:<rssi>,...
+SOS|<devID>|<status>|<battery>|<relayID>|<lat>|<lon>|<alt>|<rssi>\n
 ```
 
-Example: `N|R-02|R-01:-71,R-03:-68,R-04:-89`
-
-The backend compares these against the baseline recorded at installation. All
-links from one node shifting together means that node moved, or its antenna
-broke. Either way it needs a physical check, and the dashboard flags its
-position as unverified rather than rewriting the coordinate.
-
----
-
-## 6. Base station to dashboard
-
-The base station prints each received packet verbatim, one per line, to USB
-serial. No framing, no prefix.
+Example: `SOS|7A3C|0|18|R-02|14.457000|120.985000|3.0|-72`
 
 ```
-Port: the base station's COM port
 Baud: 115200
 Line ending: \n
+Encoding: ASCII
 ```
 
-The backend reads with pyserial and dispatches on the first character: `R`,
-`H`, `B`, or `N`.
+The reader ignores any line not starting with `SOS|`, so boot messages and
+debug output on the same port are harmless. Keep debug prints free of that
+prefix.
 
-Lines that do not start with one of those, or that fail to parse, are logged
-and discarded. The base station also prints its own boot messages, so the
-parser must tolerate anything.
+---
+
+## 4. Release command, backend to base station
+
+The only traffic going the other way. `POST /release` writes it through the
+same serial connection, because Windows allows only one program to hold a COM
+port.
+
+```
+RELEASE|<devID>\n
+RELEASE\n
+```
+
+The base station forwards it to the drone payload over LoRa, and the payload
+actuates the servo. The ID is only for the log.
+
+**Not yet settled:** whether the payload releases in flight at all, pending
+CAAP's answer on dropping objects from an RPA. If it is not permitted, the
+servo becomes a ground demonstration and this command stays as a bench test.
+
+---
+
+## 5. Heartbeat and beacon, relay to base station
+
+Not yet consumed by the backend. Specified here so the firmware can emit them
+and the dashboard can add node health later.
+
+### Heartbeat
+
+Every 30 to 60 seconds, staggered so the relays do not all transmit on the
+same second.
+
+```
+HB|<relayID>|<battV>|<uptimeS>|<fwdCount>|<tilt>
+```
+
+Example: `HB|R-02|3.87|14322|47|OK`
+
+`tilt` is `OK`, `TILT` or `JOLT` from the MPU6050. Static tilt only: gravity
+gives a drift-free reference while the node is still, so "this relay fell over"
+is reliable. Position from acceleration is not, since bias integrates into tens
+of metres within a minute.
+
+Three missed heartbeats means the node is offline.
+
+### Beacon
+
+```
+BC|<relayID>|<seq>
+```
+
+Beacons are never rebroadcast. Every other relay records the RSSI it arrives
+at and reports the set periodically:
+
+```
+NB|<relayID>|<peer>:<rssi>,<peer>:<rssi>,...
+```
+
+Example: `NB|R-02|R-01:-71,R-03:-68,R-04:-89`
+
+Compared against a baseline recorded at installation, this is how a moved or
+damaged relay is detected. All links from one node shifting together means
+that node moved, or its antenna broke. Either way it needs a physical check,
+and the dashboard should flag its position as unverified rather than rewriting
+the coordinate from an estimate. A surveyed point should never be replaced by
+a guess.
 
 ---
 
 ## Flooding rules
 
-These are not optional. Without them two relays in range of each other will
-rebroadcast the same packet back and forth until the band is saturated.
+Not optional. Without them two relays in range of each other rebroadcast the
+same packet back and forth until the band is saturated.
 
-1. Every `R` packet carries a unique `pktID`.
-2. Each relay keeps the last 20 pktIDs it has seen. A packet already in that
-   list is dropped without forwarding.
-3. `hop` is incremented on every rebroadcast. A packet arriving with `hop` at
-   or above 3 is dropped.
-4. Before rebroadcasting, wait a random 50 to 500 ms. Relays that heard the
-   same packet at the same moment must not transmit together.
+1. Every `SOS` packet carries a unique `pktID`.
+2. Each relay keeps the last 20 pktIDs it has seen and drops repeats without
+   forwarding.
+3. `hop` is incremented on every rebroadcast. A packet arriving at or above
+   hop 3 is dropped.
+4. Wait a random 50 to 500 ms before rebroadcasting, so relays that heard the
+   same packet do not transmit together.
 
 ---
 
@@ -232,19 +232,28 @@ Every node must match exactly or nothing is received.
 | Coding rate | 4/5 |
 | Sync word | 0x12 |
 
-The Philippine allocation under AS923-3 is 915 to 918 MHz. The SX1276 modules
-ship configured for the US plan at 902 to 928 MHz, which is wider than this
-country permits, so the frequency is fixed in firmware and must stay inside
-that window.
+The Philippine allocation under AS923-3 is 915 to 918 MHz. SX1276 modules sold
+as "915 MHz" ship configured for the US plan at 902 to 928 MHz, which is wider
+than permitted here, so the frequency is pinned in firmware.
 
 ---
 
-## Still open
+## Testing without hardware
+
+`backend/tools/simulate_packets.py` generates traffic from four simulated
+relays and prints the resulting position error per survivor. Run it to see
+what well-formed input looks like, then compare your relay's first real output
+against it line by line.
+
+---
+
+## Open items
 
 - Drone to base station link: LoRa or ESP-NOW. LoRa is the current
   recommendation, since it removes a second protocol and avoids competing with
   the telemetry radio.
-- Whether the payload release happens in flight, pending CAAP's answer on
-  dropping objects from an RPA.
-- Cellular ingest endpoint. The dashboard has no route for it yet, so the app
-  has nothing to POST to. That is a Member 1 and Member 3 item.
+- Payload release in flight, pending CAAP.
+- Backend does not yet consume `HB` or `NB` lines.
+- Path loss exponent is uncalibrated. Measure it in the real environment,
+  open air and through concrete separately, before quoting any accuracy
+  figure.

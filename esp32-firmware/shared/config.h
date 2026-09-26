@@ -55,6 +55,22 @@
 #define NODE_ID          "R-01"
 
 // ---------------------------------------------------------------------------
+// Surveyed position of this relay
+//
+// Measured once at installation with a tape from a fixed benchmark, not read
+// from a GPS. Accurate to well under a metre and it does not drift, which is
+// why the relays carry no GPS module.
+//
+// These three values go into every packet this relay originates and they are
+// what the backend localises from. Set them per node before deployment; a
+// relay flashed with another relay's coordinates will place survivors in the
+// wrong place with no error anywhere.
+// ---------------------------------------------------------------------------
+#define NODE_LAT         14.457000
+#define NODE_LON         120.985000
+#define NODE_ALT         3.0
+
+// ---------------------------------------------------------------------------
 // BLE scanning
 //
 // Scan and sleep set the trade-off between detection latency and battery
@@ -88,6 +104,16 @@
 #define SEEN_LIST_SIZE   20
 #define BACKOFF_MIN_MS   50
 #define BACKOFF_MAX_MS   500
+
+// ---------------------------------------------------------------------------
+// Status codes
+//
+// Index into STATUS_NAMES in backend/priority.py. The order is fixed by the
+// backend; do not renumber here.
+//   0 CRITICAL SOS   1 MEDICAL      2 UNCONFIRMED
+//   3 NEED ASSISTANCE 4 EVACUATING  5 SAFE
+// ---------------------------------------------------------------------------
+#define STATUS_COUNT     6
 
 // ---------------------------------------------------------------------------
 // Battery monitoring

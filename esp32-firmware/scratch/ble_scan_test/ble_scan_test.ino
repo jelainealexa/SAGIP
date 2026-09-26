@@ -13,7 +13,7 @@
  *
  * Testing without the Android app:
  *   nRF Connect for Mobile -> Advertiser -> add record ->
- *   Complete Local Name -> S|7A3C|0|0|18
+ *   Complete Local Name -> S|7A3C|0|18
  *
  * Board settings for the ESP32-C3 bench board:
  *   Board: ESP32C3 Dev Module
@@ -29,6 +29,14 @@
 #define BLE_SCAN_SEC   2
 #define SOS_PREFIX     "S|"
 
+// This relay's surveyed position, measured with a tape from a fixed
+// benchmark at installation, not read from a GPS. Placeholder values for
+// bench work; set them per node before deployment.
+#define RELAY_ID       "R-01"
+#define RELAY_LAT      14.457000
+#define RELAY_LON      120.985000
+#define RELAY_ALT      3.0
+
 BLEScan *pBLEScan;
 unsigned long heard = 0;
 
@@ -36,8 +44,7 @@ unsigned long heard = 0;
 // See PACKET_FORMAT.md section 1.
 struct Distress {
   String devID;
-  int    status;      // 0 CRITICAL, 1 ASSISTANCE, 2 SAFE
-  String request;     // concatenated assistance digits, or "-"
+  int    status;      // index into STATUS_NAMES in backend/priority.py
   int    battery;     // percent
   int    rssi;        // dBm, measured here, never overwritten downstream
   bool   valid;
@@ -52,35 +59,38 @@ Distress parseAdvertisement(const String &name, int rssi) {
 
   if (!name.startsWith(SOS_PREFIX)) return d;
 
-  int f[4];
+  int f[3];
   int found = 0;
   int from = 0;
-  while (found < 4) {
+  while (found < 3) {
     int at = name.indexOf('|', from);
     if (at < 0) break;
     f[found++] = at;
     from = at + 1;
   }
-  if (found < 4) return d;
+  if (found < 3) return d;
 
   d.devID   = name.substring(f[0] + 1, f[1]);
   d.status  = name.substring(f[1] + 1, f[2]).toInt();
-  d.request = name.substring(f[2] + 1, f[3]);
-  d.battery = name.substring(f[3] + 1).toInt();
+  d.battery = name.substring(f[2] + 1).toInt();
 
   if (d.devID.length() == 0)            return d;
-  if (d.status < 0 || d.status > 2)     return d;
+  if (d.status < 0 || d.status > 5)     return d;
   if (d.battery < 0 || d.battery > 100) return d;
 
   d.valid = true;
   return d;
 }
 
+// Must stay in the same order as STATUS_NAMES in backend/priority.py.
 const char *statusText(int s) {
   switch (s) {
-    case 0:  return "CRITICAL";
-    case 1:  return "ASSISTANCE";
-    case 2:  return "SAFE";
+    case 0:  return "CRITICAL SOS";
+    case 1:  return "MEDICAL";
+    case 2:  return "UNCONFIRMED";
+    case 3:  return "NEED ASSISTANCE";
+    case 4:  return "EVACUATING";
+    case 5:  return "SAFE";
     default: return "INVALID";
   }
 }
@@ -107,18 +117,30 @@ class ScanCallbacks : public BLEAdvertisedDeviceCallbacks {
     Serial.print("device   : "); Serial.println(d.devID);
     Serial.print("status   : "); Serial.print(d.status);
     Serial.print(" ("); Serial.print(statusText(d.status)); Serial.println(")");
-    Serial.print("request  : "); Serial.println(d.request);
     Serial.print("battery  : "); Serial.print(d.battery); Serial.println("%");
     Serial.print("BLE RSSI : "); Serial.print(d.rssi); Serial.println(" dBm");
 
-    // Preview of the LoRa packet this relay would transmit. Once the SX1276
-    // modules arrive this string goes over the air unchanged.
-    Serial.print("would tx : R|XXXXXX|1|");
-    Serial.print(d.devID);  Serial.print("|");
-    Serial.print(d.status); Serial.print("|");
-    Serial.print(d.request); Serial.print("|");
+    // Preview of the LoRa packet this relay would transmit, and of the
+    // nine-field line the base station would then print to the backend.
+    // Compare these against backend/tools/simulate_packets.py output.
+    Serial.print("lora tx  : SOS|XXXXXX|1|");
+    Serial.print(d.devID);   Serial.print("|");
+    Serial.print(d.status);  Serial.print("|");
     Serial.print(d.battery); Serial.print("|");
-    Serial.print("R-01");   Serial.print("|");
+    Serial.print(RELAY_ID);  Serial.print("|");
+    Serial.print(RELAY_LAT, 6); Serial.print("|");
+    Serial.print(RELAY_LON, 6); Serial.print("|");
+    Serial.print(RELAY_ALT, 1); Serial.print("|");
+    Serial.println(d.rssi);
+
+    Serial.print("serial   : SOS|");
+    Serial.print(d.devID);   Serial.print("|");
+    Serial.print(d.status);  Serial.print("|");
+    Serial.print(d.battery); Serial.print("|");
+    Serial.print(RELAY_ID);  Serial.print("|");
+    Serial.print(RELAY_LAT, 6); Serial.print("|");
+    Serial.print(RELAY_LON, 6); Serial.print("|");
+    Serial.print(RELAY_ALT, 1); Serial.print("|");
     Serial.println(d.rssi);
   }
 };
